@@ -10,6 +10,11 @@ export const BASES = {
   billing: (import.meta as any).env?.VITE_BILLING_API || 'http://localhost:8083',
 };
 
+// Auth context set by the AuthProvider after login: a bearer token + the
+// resolved tenant. Until then we fall back to the env tenant (anonymous/dev).
+let _auth: { token?: string; tenant?: string } = {};
+export function setAuth(a: { token?: string; tenant?: string }) { _auth = a || {}; }
+
 type Opts = { method?: string; body?: any; headers?: Record<string, string>; tenant?: string };
 
 export class ApiError extends Error {
@@ -22,9 +27,15 @@ export class ApiError extends Error {
 /** Build a fetch wrapper bound to one BFF base URL. */
 export function createClient(base: string) {
   async function req(path: string, opts: Opts = {}) {
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      'x-tenant-id': opts.tenant ?? _auth.tenant ?? TENANT,
+      ...(opts.headers || {}),
+    };
+    if (_auth.token) headers['authorization'] = 'Bearer ' + _auth.token;
     const res = await fetch(base + path, {
       method: opts.method ?? 'GET',
-      headers: { 'content-type': 'application/json', 'x-tenant-id': opts.tenant ?? TENANT, ...(opts.headers || {}) },
+      headers,
       body: opts.body != null ? JSON.stringify(opts.body) : undefined,
     });
     if (!res.ok) {

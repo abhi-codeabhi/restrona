@@ -1,5 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { createBrowserRouter, RouterProvider, Link } from 'react-router-dom';
+import { AuthProvider, useAuth } from './auth/AuthProvider';
+import { RequireRole } from './auth/RequireRole';
 
 const Customer = lazy(() => import('./surfaces/customer/Customer'));
 const Kitchen = lazy(() => import('./surfaces/kitchen/Kitchen'));
@@ -36,12 +38,23 @@ function Fallback() {
   return <div style={{ padding: 40, textAlign: 'center' }} className="muted">Loading…</div>;
 }
 
+function AuthBadge() {
+  const { enabled, session, profile, signOut } = useAuth();
+  if (!enabled || !session) return null;
+  return (
+    <span className="xs" style={{ marginLeft: 'auto', color: 'var(--muted)' }}>
+      {profile?.role || 'signed in'} · <button onClick={signOut} style={{ border: 'none', background: 'none', color: 'var(--g)', cursor: 'pointer', fontSize: 11 }}>sign out</button>
+    </span>
+  );
+}
+
 function Surface({ children }: { children: React.ReactNode }) {
   return (
     <Suspense fallback={<Fallback />}>
       <div>
-        <div style={{ padding: '10px 16px', borderBottom: '0.5px solid var(--border)', background: 'var(--surface)' }}>
+        <div style={{ padding: '10px 16px', borderBottom: '0.5px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center' }}>
           <Link to="/" className="xs" style={{ color: 'var(--muted)' }}>← Restorna surfaces</Link>
+          <AuthBadge />
         </div>
         {children}
       </div>
@@ -51,12 +64,18 @@ function Surface({ children }: { children: React.ReactNode }) {
 
 const router = createBrowserRouter([
   { path: '/', element: <Landing /> },
+  // Customer is open (anonymous QR table session — no login).
   { path: '/customer', element: <Surface><Customer /></Surface> },
-  { path: '/kitchen', element: <Surface><Kitchen /></Surface> },
-  { path: '/waiter', element: <Surface><Waiter /></Surface> },
-  { path: '/owner', element: <Surface><Owner /></Surface> },
+  // Staff/owner are gated per persona (OTP). No-op until Supabase auth is configured.
+  { path: '/kitchen', element: <Surface><RequireRole roles={['kitchen', 'manager', 'owner']} persona="kitchen"><Kitchen /></RequireRole></Surface> },
+  { path: '/waiter', element: <Surface><RequireRole roles={['waiter', 'manager', 'owner']} persona="waiter"><Waiter /></RequireRole></Surface> },
+  { path: '/owner', element: <Surface><RequireRole roles={['owner', 'manager']} persona="owner"><Owner /></RequireRole></Surface> },
 ]);
 
 export function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
+  );
 }
