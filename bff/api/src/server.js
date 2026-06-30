@@ -12,6 +12,9 @@ import { openTableBill } from '../../../services/orchestration/src/tableBill.js'
 import { buildFloorView } from '../../../services/orchestration/src/floorView.js';
 import { relocateTable } from '../../../services/orchestration/src/relocateTable.js';
 import { buildOpenTabs } from '../../../services/orchestration/src/openTabs.js';
+import { buildNudges } from '../../../services/nudges/src/engine.js';
+
+const tableNum = (v) => { const d = String(v ?? '').replace(/\D/g, ''); return d ? parseInt(d, 10) : null; };
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -181,9 +184,41 @@ async function route(req, res, path, url, tenant, uc) {
   if (m === 'POST' && (mt = path.match(/^\/tickets\/([^/]+)\/bump$/))) {
     return await uc.kitchen.markAllReady(tenant, { ticketId: mt[1] });
   }
-  // Waiter delivers ONE ready ticket (per order, not per table).
+  // Waiter delivers ONE ready ticket (per order, not per table). Stamp the
+  // table's lastServedAt so the post-serve "how was the food" nudge can arm.
   if (m === 'POST' && (mt = path.match(/^\/tickets\/([^/]+)\/serve$/))) {
-    return await uc.kitchen.serveTicket(tenant, { ticketId: mt[1] });
+    const r = await uc.kitchen.serveTicket(tenant, { ticketId: mt[1] });
+    if (r.ok) {
+      const n = tableNum(r.value.table);
+      if (n != null) await uc.floor.setTableMeta(tenant, { n, patch: { lastServedAt: Date.now() } });
+    }
+    return r;
+  }
+  // Host/waiter seats an arriving party -> arms the greet nudge.
+  if (m === 'POST' && path === '/tables/seat') {
+    const body = (await readBody(req)) ?? {};
+    return await uc.floor.seatParty(tenant, { n: body.n });
+  }
+  // Waiter's proactive nudges (greet / how-was-the-food / anything-else), derived
+  // from each table's timestamps against the manager's nudge config.
+  if (m === 'GET' && path === '/nudges') {
+    const fr = await uc.floor.getFloor(tenant);
+    if (!fr.ok) return fr;
+    const config = uc.nudgeConfig.get(tenant);
+    const tables = (fr.value.tables || []).map((t) => ({
+      n: t.n, seatedAt: t.seatedAt ?? null, greetedAt: t.greetedAt ?? null,
+      lastServedAt: t.lastServedAt ?? null, lastCheckinAt: t.lastCheckinAt ?? null,
+    }));
+    return { ok: true, value: buildNudges({ tables, now: Date.now(), config }) };
+  }
+  // Waiter completes a nudge -> record it so it stops (and the next arms).
+  if (m === 'POST' && (mt = path.match(/^\/tables\/(\d+)\/nudge$/))) {
+    const body = (await readBody(req)) ?? {};
+    const n = parseInt(mt[1], 10);
+    const now = Date.now();
+    const patch = body.type === 'greet' ? { greetedAt: now }
+      : (body.type === 'checkin' || body.type === 'anything') ? { lastCheckinAt: now } : {};
+    return await uc.floor.setTableMeta(tenant, { n, patch });
   }
   if (m === 'POST' && path === '/menu/86') {
     const body = (await readBody(req)) ?? {};
@@ -247,6 +282,29 @@ async function route(req, res, path, url, tenant, uc) {
     });
     if (!r.ok) return r;
     return { ok: true, value: { discountMinor: r.value.discountMinor, applied: r.value.applied } };
+  }
+
+  /* ───────────────────────── Manager / admin ───────────────────────── */
+  if (m === 'GET' && path === '/admin/staff') return await uc.staff.listStaff(tenant);
+  if (m === 'POST' && path === '/admin/staff') {
+    const body = (await readBody(req)) ?? {};
+    const r = await uc.staff.addStaff(tenant, { name: body.name, role: body.role });
+    return r.ok ? { ok: true, status: 201, value: r.value } : r;
+  }
+  if (m === 'POST' && (mt = path.match(/^\/admin\/staff\/([^/]+)\/disable$/))) {
+    return await uc.staff.disableStaff(tenant, { id: mt[1] });
+  }
+  if (m === 'POST' && path === '/admin/tables/assign') {
+    const body = (await readBody(req)) ?? {};
+    return await uc.floor.assignWaiter(tenant, { n: body.n, waiterId: body.waiterId });
+  }
+  // Manager menu view: every item incl. unavailable (toggle via POST /menu/86).
+  if (m === 'GET' && path === '/menu/all') return await uc.catalog.listAll(tenant);
+  // Manager-owned nudge timings/toggles.
+  if (m === 'GET' && path === '/admin/nudge-config') return { ok: true, value: uc.nudgeConfig.get(tenant) };
+  if (m === 'POST' && path === '/admin/nudge-config') {
+    const body = (await readBody(req)) ?? {};
+    return { ok: true, value: uc.nudgeConfig.set(tenant, body.config || {}) };
   }
 
   /* ───────────────────────── Owner ───────────────────────── */

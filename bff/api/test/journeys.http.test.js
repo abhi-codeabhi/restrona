@@ -197,6 +197,58 @@ test('floor: move a seated table to a free one', async () => {
   } finally { await api.close(); }
 });
 
+test('manager: staff roster — list seeded, add, disable', async () => {
+  const api = await startApi();
+  try {
+    const seeded = (await api.get('/admin/staff')).body;
+    assert.ok(seeded.length >= 3, 'seeded team present');
+    const added = (await api.post('/admin/staff', { name: 'Meera', role: 'waiter' })).body;
+    assert.equal(added.role, 'waiter');
+    assert.ok((await api.get('/admin/staff')).body.find((s) => s.id === added.id));
+    await api.post(`/admin/staff/${added.id}/disable`);
+    assert.equal((await api.get('/admin/staff')).body.find((s) => s.id === added.id).disabled, true);
+  } finally { await api.close(); }
+});
+
+test('manager: enable/disable a menu item reflects on the customer menu', async () => {
+  const api = await startApi();
+  try {
+    const all = (await api.get('/menu/all')).body;
+    assert.equal(all.length, 5);
+    const naan = all.find((i) => i.name === 'Garlic Naan');
+    await api.post('/menu/86', { itemId: naan.id, available: false });
+    assert.equal((await api.get('/menu/all')).body.find((i) => i.id === naan.id).available, false, 'still in manager view');
+    assert.ok(!(await api.get('/menu')).body.find((i) => i.id === naan.id), 'hidden from customer');
+    await api.post('/menu/86', { itemId: naan.id, available: true });
+    assert.ok((await api.get('/menu')).body.find((i) => i.id === naan.id), 'back on the menu');
+  } finally { await api.close(); }
+});
+
+test('manager: nudge config get defaults + save changes', async () => {
+  const api = await startApi();
+  try {
+    const cfg = (await api.get('/admin/nudge-config')).body;
+    assert.equal(cfg.greet.enabled, true);
+    assert.equal(cfg.checkin.afterServeSecs, 300);
+    const saved = (await api.post('/admin/nudge-config', { config: { greet: { delaySecs: 60 }, checkin: { enabled: false } } })).body;
+    assert.equal(saved.greet.delaySecs, 60);
+    assert.equal(saved.checkin.enabled, false);
+    assert.equal((await api.get('/admin/nudge-config')).body.greet.delaySecs, 60, 'persisted');
+  } finally { await api.close(); }
+});
+
+test('waiter: seat a party arms the greet timer; nudges endpoint responds', async () => {
+  const api = await startApi();
+  try {
+    await api.post('/tables/seat', { n: 2 });
+    const t2 = (await api.get('/floor')).body.tables.find((t) => t.n === 2);
+    assert.equal(t2.status, 'seated');
+    assert.equal(typeof t2.seatedAt, 'number', 'greet timer armed');
+    // greet delay (30s) hasn't elapsed, so nothing is due yet — but the endpoint works.
+    assert.ok(Array.isArray((await api.get('/nudges')).body));
+  } finally { await api.close(); }
+});
+
 test('owner: dashboard + menu-engineering respond with data', async () => {
   const api = await startApi();
   try {

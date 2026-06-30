@@ -20,7 +20,7 @@ export function createFloor({ tableNumbers = [] } = {}) {
   for (const n of tableNumbers) {
     if (seen.has(n)) throw new DomainError('DUPLICATE_TABLE', `Table ${n} listed more than once`);
     seen.add(n);
-    tables.push({ n, status: 'free', order: null, waiterId: null });
+    tables.push({ n, status: 'free', order: null, waiterId: null, seatedAt: null, greetedAt: null, lastServedAt: null, lastCheckinAt: null });
   }
   return { id: FLOOR_ID, tables };
 }

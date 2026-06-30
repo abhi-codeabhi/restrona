@@ -26,7 +26,21 @@ export const waiterApi = {
   // POST /bills/open-for-table { table } -> generate the aggregated final bill so
   // the waiter can settle (or hand to billing). Same call the billing agent uses.
   openTableBill: (table: number) => c.post('/bills/open-for-table', { table }),
+  // GET /nudges -> proactive prompts (greet / how-was-the-food / anything-else).
+  getNudges: () => c.get('/nudges'),
+  // POST /tables/:n/nudge { type } -> mark a nudge done (records the timestamp).
+  doneNudge: (n: number, type: string) => c.post('/tables/' + n + '/nudge', { type }),
+  // POST /tables/seat { n } -> seat an arriving party (arms the greet nudge).
+  seatTable: (n: number) => c.post('/tables/seat', { n }),
 };
+
+export type Nudge = { table: number; type: 'greet' | 'checkin' | 'anything'; label: string; since: number };
+export function normalizeNudges(res: any): Nudge[] {
+  const raw = Array.isArray(res) ? res : res?.value ?? [];
+  return (raw || [])
+    .map((n: any) => ({ table: Number(n.table) || 0, type: n.type, label: n.label || 'Check the table', since: Number(n.since) || Date.now() }))
+    .filter((n: Nudge) => n.table && n.type);
+}
 
 // ---- Normalizers: BFF responses wrap differently (use-case ok() values surface
 // directly as the JSON body), so coerce to stable shapes the UI renders. ----

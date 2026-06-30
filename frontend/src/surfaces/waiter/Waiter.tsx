@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  waiterApi, normalizeRequests, normalizeFloor, normalizeServeQueue, moveVerb,
-  type Req, type Table, type ServeTicket,
+  waiterApi, normalizeRequests, normalizeFloor, normalizeServeQueue, normalizeNudges, moveVerb,
+  type Req, type Table, type ServeTicket, type Nudge,
 } from './api';
+
+const NUDGE_ICON: Record<string, string> = { greet: '👋', checkin: '🍽️', anything: '🛎️' };
 
 /* Waiter handheld — the floor-runner surface. Psychology baked in:
    - overwhelm -> focus: ONE ranked feed of what to do next, not a list of lists.
@@ -41,7 +43,7 @@ const AGE_TICK_MS = 1000;
 // the other.
 type FeedItem = {
   key: string;
-  kind: 'request' | 'serve';
+  kind: 'request' | 'serve' | 'nudge';
   table: number;
   title: string;
   subtitle?: string;
@@ -51,10 +53,24 @@ type FeedItem = {
   rank: number;       // higher = more urgent
   req?: Req;
   ticketId?: string;
+  nudgeType?: string;
 };
 
-function buildFeed(reqs: Req[], serves: ServeTicket[]): FeedItem[] {
+function buildFeed(reqs: Req[], serves: ServeTicket[], nudges: Nudge[]): FeedItem[] {
   const items: FeedItem[] = [];
+  for (const n of nudges) {
+    items.push({
+      key: 'nudge_' + n.table + '_' + n.type,
+      kind: 'nudge',
+      table: n.table,
+      title: n.label,
+      icon: NUDGE_ICON[n.type] || '🔔',
+      since: n.since,
+      escalated: false,
+      rank: 1700, // above serve, below open service requests
+      nudgeType: n.type,
+    });
+  }
   for (const r of reqs) {
     const esc = r.state === 'escalated';
     items.push({
@@ -100,6 +116,7 @@ export default function Waiter() {
   const [reqs, setReqs] = useState<Req[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
   const [serves, setServes] = useState<ServeTicket[]>([]);
+  const [nudges, setNudges] = useState<Nudge[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -116,12 +133,13 @@ export default function Waiter() {
       // Ask the BFF to escalate overdue requests first, then read the fresh state:
       // open requests, the ready-ticket serve queue, and the derived floor map.
       try { await waiterApi.escalateDue(Date.now()); } catch { /* non-fatal */ }
-      const [rRes, sRes, fRes] = await Promise.all([
-        waiterApi.getRequests(), waiterApi.getServeQueue(), waiterApi.getFloor(),
+      const [rRes, sRes, fRes, nRes] = await Promise.all([
+        waiterApi.getRequests(), waiterApi.getServeQueue(), waiterApi.getFloor(), waiterApi.getNudges(),
       ]);
       setReqs(normalizeRequests(rRes));
       setServes(normalizeServeQueue(sRes));
       setTables(normalizeFloor(fRes));
+      setNudges(normalizeNudges(nRes));
       setError(null);
     } catch (e: any) {
       if (initial) setError(e?.message || 'Could not reach the floor');
@@ -145,10 +163,10 @@ export default function Waiter() {
   }, []);
 
   const feed = useMemo(() => {
-    const items = buildFeed(reqs, serves);
+    const items = buildFeed(reqs, serves, nudges);
     // drop ones currently animating out so the next surfaces visually
     return items.filter((it) => !leaving[it.key]);
-  }, [reqs, serves, leaving]);
+  }, [reqs, serves, nudges, leaving]);
 
   async function actOn(it: FeedItem) {
     if (busy[it.key]) return;
@@ -169,6 +187,10 @@ export default function Waiter() {
           setReqs((rs) => rs.filter((rr) => rr.id !== it.req!.id));
           flash(`Acknowledged · Table ${it.table}`);
         }
+      } else if (it.kind === 'nudge' && it.nudgeType) {
+        await waiterApi.doneNudge(it.table, it.nudgeType);
+        setNudges((ns) => ns.filter((n) => !(n.table === it.table && n.type === it.nudgeType)));
+        flash(`Done · Table ${it.table}`);
       } else if (it.ticketId) {
         // Deliver THIS ticket (one order). Other rounds at the same table are
         // separate cards and stay until they're each served.
@@ -184,6 +206,17 @@ export default function Waiter() {
       flash(e?.message || 'Could not complete — try again');
     } finally {
       setBusy((b) => { const n = { ...b }; delete n[it.key]; return n; });
+    }
+  }
+
+  // Seat an arriving party at a free table — starts the greet-nudge timer.
+  async function seatParty(n: number) {
+    try {
+      await waiterApi.seatTable(n);
+      flash(`Seated · Table ${n}`);
+      window.setTimeout(() => refresh(false), 300);
+    } catch (e: any) {
+      flash(e?.message || `Could not seat Table ${n}`);
     }
   }
 
@@ -262,7 +295,7 @@ export default function Waiter() {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                 {tables.map((t) => (
-                  <TableTile key={t.n} t={t} onTap={() => t.status !== 'free' && setSheetTable(t)} />
+                  <TableTile key={t.n} t={t} onTap={() => (t.status === 'free' ? seatParty(t.n) : setSheetTable(t))} />
                 ))}
               </div>
               <Legend />
@@ -325,8 +358,9 @@ function Tabs({ tab, setTab, pending, occupied }: any) {
 function FeedCard({ it, top, now, busy, onAct }: { it: FeedItem; top: boolean; now: number; busy: boolean; onAct: () => void }) {
   const accent = it.escalated ? 'var(--red)' : top ? 'var(--g)' : 'var(--border2)';
   const isServe = it.kind === 'serve';
+  const isNudge = it.kind === 'nudge';
   const isBill = it.kind === 'request' && it.req?.type === 'bill';
-  const cta = isServe ? 'Serve' : isBill ? 'Generate bill' : 'Acknowledge';
+  const cta = isServe ? 'Serve' : isBill ? 'Generate bill' : isNudge ? 'Done' : 'Acknowledge';
   return (
     <div
       className="rz-card"

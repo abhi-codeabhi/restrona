@@ -5,13 +5,39 @@ import { useAuth } from './AuthProvider';
    mechanism is identical for every role (enter contact → get a code → verify).
    Psychology: one field at a time, clear progress, friendly errors. */
 export function OtpLogin({ persona = 'staff' }: { persona?: string }) {
-  const { sendOtp, verifyOtp } = useAuth();
+  const { sendOtp, verifyOtp, dev, devVerify } = useAuth();
   const [channel, setChannel] = useState<'email' | 'phone'>('email');
   const [value, setValue] = useState('');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'enter' | 'verify'>('enter');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const inputS: React.CSSProperties = { width: '100%', height: 44, border: '0.5px solid var(--border)', borderRadius: 12, padding: '0 14px', fontSize: 15 };
+
+  // Dev login (Supabase not configured): just the demo code 1234 -> signs in as
+  // this persona's role. Lets staff/manager surfaces be reached without Supabase.
+  if (dev) {
+    async function devSignIn() {
+      setBusy(true); setErr(null);
+      try { await devVerify(persona, code.trim()); }
+      catch (e: any) { setErr(e?.message || 'Invalid code'); }
+      finally { setBusy(false); }
+    }
+    return (
+      <div style={{ maxWidth: 380, margin: '0 auto', padding: '48px 20px' }}>
+        <div className="kicker">Sign in</div>
+        <h1 style={{ fontSize: 24, margin: '4px 0 4px', textTransform: 'capitalize' }}>{persona} login</h1>
+        <p className="muted sm" style={{ marginTop: 0 }}>Demo mode — enter the code <b style={{ color: 'var(--ink)' }}>1234</b> to continue as {persona}.</p>
+        <input style={{ ...inputS, letterSpacing: 6, textAlign: 'center', fontSize: 20, marginTop: 18 }} inputMode="numeric"
+          placeholder="••••" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+        {err && <div className="xs" style={{ color: 'var(--red)', marginTop: 8 }}>{err}</div>}
+        <button className="rz-cta" style={{ marginTop: 16 }} disabled={busy || code.length < 4} onClick={devSignIn}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+      </div>
+    );
+  }
 
   async function send() {
     setBusy(true); setErr(null);

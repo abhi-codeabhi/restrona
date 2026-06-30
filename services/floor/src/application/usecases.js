@@ -30,9 +30,10 @@ export function makeFloorUseCases({ floor, outbox }) {
       const doc = await load(tenant);
       if (!doc) return err(new NotFoundError('Floor not initialized'));
       seat(doc, v.value.n);
-      if (v.value.order !== undefined && v.value.order !== null) {
-        doc.tables.find((t) => t.n === v.value.n).order = v.value.order;
-      }
+      const seated = doc.tables.find((t) => t.n === v.value.n);
+      if (v.value.order !== undefined && v.value.order !== null) seated.order = v.value.order;
+      // Arm the greet timer on first seating; don't reset it on later rounds.
+      if (!seated.seatedAt) seated.seatedAt = Date.now();
       await floor.save(tenant, doc);
       outbox.add(evt(EVENTS.TableSeated, tenant.tenantId, { n: v.value.n }));
       return ok(doc);
@@ -74,10 +75,38 @@ export function makeFloorUseCases({ floor, outbox }) {
         return ok(doc);
       }
       if (!doc.tables.find((t) => t.n === n)) {
-        doc.tables.push({ n, status: 'free', order: null, waiterId: null });
+        doc.tables.push({ n, status: 'free', order: null, waiterId: null, seatedAt: null, greetedAt: null, lastServedAt: null, lastCheckinAt: null });
         await floor.save(tenant, doc);
       }
       return ok(doc);
+    },
+
+    // Seat an arriving party (host/waiter taps a table). Marks it seated and
+    // starts the greet timer (seatedAt now, greetedAt cleared).
+    async seatParty(tenant, { n, now = Date.now() }) {
+      const ensure = await this.ensureTable(tenant, { n });
+      if (!ensure.ok) return ensure;
+      const doc = await load(tenant);
+      const t = doc.tables.find((x) => x.n === n);
+      t.status = 'seated';
+      if (!t.seatedAt) t.seatedAt = now;
+      t.greetedAt = null;
+      await floor.save(tenant, doc);
+      outbox.add(evt(EVENTS.TableSeated, tenant.tenantId, { n }));
+      return ok(doc);
+    },
+
+    // Merge nudge timestamps onto a table (seatedAt/greetedAt/lastServedAt/lastCheckinAt).
+    async setTableMeta(tenant, { n, patch = {} }) {
+      const doc = await load(tenant);
+      if (!doc) return err(new NotFoundError('Floor not initialized'));
+      const t = doc.tables.find((x) => x.n === n);
+      if (!t) return err(new NotFoundError(`Table ${n} not found`));
+      for (const k of ['seatedAt', 'greetedAt', 'lastServedAt', 'lastCheckinAt']) {
+        if (k in patch) t[k] = patch[k];
+      }
+      await floor.save(tenant, doc);
+      return ok(t);
     },
 
     // Set a table's live status (free|seated|cooking|ready|billing). Used by the

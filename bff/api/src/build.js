@@ -16,6 +16,9 @@ import { makeFloorUseCases } from '../../../services/floor/src/application/useca
 import { makeBillingUseCases } from '../../../services/billing/src/application/usecases.js';
 import { makePromotionsUseCases } from '../../../services/promotions/src/application/usecases.js';
 import { makeServiceRequestUseCases } from '../../../services/service-requests/src/application/usecases.js';
+import { makeStaffUseCases } from '../../../services/staff/src/usecases.js';
+import { InMemoryStaffRepository } from '../../../services/staff/src/repos.js';
+import { createNudgeConfigStore } from '../../../services/nudges/src/config.js';
 
 import { InMemoryItemRepository } from '../../../services/catalog/src/adapters/repos.js';
 import { InMemoryOrderRepository, InMemorySessionRepository } from '../../../services/ordering/src/adapters/repos.js';
@@ -47,6 +50,8 @@ export function buildApiApp({ repos, logger } = {}) {
     coupons: new InMemoryCouponRepository(),
     requests: new InMemoryRequestRepository(),
   };
+  // Staff roster is always available (in-memory even on the Postgres path for now).
+  repos.staff = repos.staff || new InMemoryStaffRepository();
 
   // Every context shares the ONE outbox/clock so events funnel into one stream.
   const catalog = makeCatalogUseCases({ items: repos.items, outbox, clock });
@@ -60,7 +65,10 @@ export function buildApiApp({ repos, logger } = {}) {
     settings: { escalationSecs: 30, cooldownSecs: 60 },
   });
 
-  const useCases = { catalog, ordering, kitchen, floor, billing, promotions, serviceRequests };
+  const staff = makeStaffUseCases({ staff: repos.staff });
+  const nudgeConfig = createNudgeConfigStore(); // per-tenant nudge timings, manager-editable
+
+  const useCases = { catalog, ordering, kitchen, floor, billing, promotions, serviceRequests, staff, nudgeConfig };
 
   // THE BRAIN: connect the contexts. Subscribes to the shared bus; fires when the
   // server relays the outbox after each successful command.
@@ -83,6 +91,13 @@ export async function seedDemoData(useCases, tenantId = 'acme') {
   await useCases.promotions.createCoupon(tenant, { code: 'WELCOME20', type: 'percent', value: 20, minOrderMinor: 30000 });
 
   await useCases.floor.initFloor(tenant, { tableNumbers: [1, 2, 3, 4, 5, 6, 7, 8, 9, 12] });
+
+  // A small starting team so the manager console isn't empty.
+  if (useCases.staff) {
+    await useCases.staff.addStaff(tenant, { name: 'Ramesh', role: 'waiter' });
+    await useCases.staff.addStaff(tenant, { name: 'Sita', role: 'waiter' });
+    await useCases.staff.addStaff(tenant, { name: 'Arjun', role: 'kitchen' });
+  }
 }
 
 // Full build + seeded demo data + NOT-yet-listening server (used by serve.js/tests).

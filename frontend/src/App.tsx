@@ -7,6 +7,7 @@ const Customer = lazy(() => import('./surfaces/customer/Customer'));
 const Kitchen = lazy(() => import('./surfaces/kitchen/Kitchen'));
 const Waiter = lazy(() => import('./surfaces/waiter/Waiter'));
 const Billing = lazy(() => import('./surfaces/billing/Billing'));
+const Manager = lazy(() => import('./surfaces/manager/Manager'));
 const Owner = lazy(() => import('./surfaces/owner/Owner'));
 
 const ROLES = [
@@ -14,6 +15,7 @@ const ROLES = [
   { to: '/kitchen', label: 'Kitchen', sub: 'live ticket board', icon: '🔥' },
   { to: '/waiter', label: 'Waiter', sub: 'floor · now · serve', icon: '🧑‍🍳' },
   { to: '/billing', label: 'Billing', sub: 'settle · take payment', icon: '🧾' },
+  { to: '/manager', label: 'Manager', sub: 'team · menu · nudges', icon: '🛠' },
   { to: '/owner', label: 'Owner', sub: 'insights · menu IQ', icon: '👑' },
 ];
 
@@ -76,6 +78,7 @@ const router = createBrowserRouter([
   { path: '/kitchen', element: <Surface><RequireRole roles={['kitchen', 'manager', 'owner']} persona="kitchen"><Kitchen /></RequireRole></Surface> },
   { path: '/waiter', element: <Surface><RequireRole roles={['waiter', 'manager', 'owner']} persona="waiter"><Waiter /></RequireRole></Surface> },
   { path: '/billing', element: <Surface><RequireRole roles={['billing', 'cashier', 'manager', 'owner']} persona="billing"><Billing /></RequireRole></Surface> },
+  { path: '/manager', element: <Surface><RequireRole roles={['manager', 'owner']} persona="manager"><Manager /></RequireRole></Surface> },
   { path: '/owner', element: <Surface><RequireRole roles={['owner', 'manager']} persona="owner"><Owner /></RequireRole></Surface> },
 ]);
 

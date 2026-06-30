@@ -1,18 +1,21 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase, authEnabled } from './supabase';
-import { setAuth } from '../lib/api';
+import { supabase, authEnabled, devAuth } from './supabase';
+import { setAuth, TENANT } from '../lib/api';
 
 type Profile = { role: string; tenant_id: string; restaurant_id?: string | null; owner_name?: string };
 type AuthCtx = {
   enabled: boolean;
+  dev: boolean;
   ready: boolean;
   session: any | null;
   profile: Profile | null;
   sendOtp: (channel: 'email' | 'phone', value: string) => Promise<void>;
   verifyOtp: (channel: 'email' | 'phone', value: string, token: string) => Promise<void>;
+  devVerify: (persona: string, token: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
+const DEV_KEY = 'restorna.dev.session';
 const Ctx = createContext<AuthCtx>(null as any);
 export const useAuth = () => useContext(Ctx);
 
@@ -48,7 +51,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, [loadProfile]);
 
+  // Restore a dev session (hardcoded-OTP login) across reloads.
+  useEffect(() => {
+    if (!devAuth) return;
+    try {
+      const raw = localStorage.getItem(DEV_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        setProfile(p);
+        setSession({ dev: true, access_token: 'dev' });
+        setAuth({ tenant: p.tenant_id });
+      }
+    } catch { /* ignore */ }
+    setReady(true);
+  }, []);
+
+  // Dev login: any contact + code 1234 signs you in as the persona's role.
+  const devVerify = useCallback(async (persona: string, token: string) => {
+    if (String(token).trim() !== '1234') throw new Error('Enter the demo code 1234');
+    const p: Profile = { role: persona, tenant_id: TENANT };
+    setProfile(p);
+    setSession({ dev: true, access_token: 'dev' });
+    setAuth({ tenant: TENANT });
+    try { localStorage.setItem(DEV_KEY, JSON.stringify(p)); } catch { /* ignore */ }
+  }, []);
+
   const sendOtp = useCallback(async (channel: 'email' | 'phone', value: string) => {
+    if (devAuth) return; // dev mode: no real code sent
     if (!supabase) throw new Error('Auth is not configured');
     const payload = channel === 'email' ? { email: value } : { phone: value };
     const { error } = await supabase.auth.signInWithOtp({ ...payload, options: { shouldCreateUser: true } } as any);
@@ -64,11 +93,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (supabase) await supabase.auth.signOut();
+    try { localStorage.removeItem(DEV_KEY); } catch { /* ignore */ }
     setSession(null); setProfile(null); setAuth({});
   }, []);
 
   return (
-    <Ctx.Provider value={{ enabled: authEnabled, ready, session, profile, sendOtp, verifyOtp, signOut }}>
+    <Ctx.Provider value={{ enabled: authEnabled || devAuth, dev: devAuth, ready, session, profile, sendOtp, verifyOtp, devVerify, signOut }}>
       {children}
     </Ctx.Provider>
   );

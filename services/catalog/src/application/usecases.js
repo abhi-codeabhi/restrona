@@ -76,6 +76,11 @@ export function makeCatalogUseCases({ items, outbox, clock }) {
       return ok(all.filter((it) => it.available));
     },
 
+    // Manager view: every item including unavailable ones (to toggle them).
+    async listAll(tenant) {
+      return ok(await items.list(tenant));
+    },
+
     // Resolve a single item by id (used by the order-flow saga to turn an order
     // line's menuItemId into a human name + station for the kitchen ticket).
     async getItem(tenant, itemId) {
