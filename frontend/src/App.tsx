@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { createBrowserRouter, RouterProvider, Link } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Link, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { RequireRole } from './auth/RequireRole';
 
@@ -53,7 +53,7 @@ function Surface({ children }: { children: React.ReactNode }) {
     <Suspense fallback={<Fallback />}>
       <div>
         <div style={{ padding: '10px 16px', borderBottom: '0.5px solid var(--border)', background: 'var(--surface)', display: 'flex', alignItems: 'center' }}>
-          <Link to="/" className="xs" style={{ color: 'var(--muted)' }}>← Restorna surfaces</Link>
+          <Link to="/demo" className="xs" style={{ color: 'var(--muted)' }}>← Restorna surfaces</Link>
           <AuthBadge />
         </div>
         {children}
@@ -63,7 +63,11 @@ function Surface({ children }: { children: React.ReactNode }) {
 }
 
 const router = createBrowserRouter([
-  { path: '/', element: <Landing /> },
+  // The public URL IS the diner experience — a guest scanning a table QR lands
+  // straight on the menu, never on an internal picker.
+  { path: '/', element: <Navigate to="/customer" replace /> },
+  // The persona launcher is dev-only scaffolding, parked at /demo.
+  { path: '/demo', element: <Landing /> },
   // Customer is open (anonymous QR table session — no login).
   { path: '/customer', element: <Surface><Customer /></Surface> },
   // Staff/owner are gated per persona (OTP). No-op until Supabase auth is configured.

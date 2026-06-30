@@ -1,10 +1,9 @@
 import { createClient, BASES } from '../../lib/api';
 
-/* There is no owner BFF yet, so the base is configurable and the calls fall back
-   to seeded demo data on any failure. When the admin BFF lands, point
-   VITE_OWNER_API at it and these methods light up unchanged. */
-const base = (import.meta as any).env?.VITE_OWNER_API || BASES.billing;
-const c = createClient(base);
+/* The unified API serves /owner/dashboard + /owner/menu-engineering; calls fall
+   back to seeded demo data on any failure. BASES.owner resolves to VITE_OWNER_API
+   or the single VITE_API_URL. */
+const c = createClient(BASES.owner);
 
 // ── Seeded demo data (used until the admin BFF is wired) ──────────────────────
 const DEMO_DASHBOARD = {

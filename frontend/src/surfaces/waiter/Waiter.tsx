@@ -126,9 +126,15 @@ export default function Waiter() {
 
   useEffect(() => {
     refresh(true);
-    const poll = window.setInterval(() => refresh(false), POLL_MS);
+    // Poll only while the tab is visible so we don't stream network calls in the
+    // background; the local age-tick keeps running (it makes no network call).
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh(false);
+    }, POLL_MS);
     const tick = window.setInterval(() => setNow(Date.now()), AGE_TICK_MS);
-    return () => { window.clearInterval(poll); window.clearInterval(tick); };
+    const onVis = () => { if (document.visibilityState === 'visible') refresh(false); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { window.clearInterval(poll); window.clearInterval(tick); document.removeEventListener('visibilitychange', onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

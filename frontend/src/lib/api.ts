@@ -3,11 +3,19 @@
 
 export const TENANT: string = (import.meta as any).env?.VITE_TENANT_ID || 'acme';
 
+// Every surface now talks to ONE unified API (shared store + order-flow saga), so
+// a customer order actually reaches the kitchen and waiter. Set VITE_API_URL to
+// that single service; the per-surface VITE_*_API vars still override it if you
+// ever split the backend again. Falls back to localhost for `npm run dev`.
+const env = (import.meta as any).env || {};
+const API: string = env.VITE_API_URL || 'http://localhost:8080';
+
 export const BASES = {
-  customer: (import.meta as any).env?.VITE_CUSTOMER_API || 'http://localhost:8080',
-  waiter: (import.meta as any).env?.VITE_WAITER_API || 'http://localhost:8081',
-  kitchen: (import.meta as any).env?.VITE_KITCHEN_API || 'http://localhost:8082',
-  billing: (import.meta as any).env?.VITE_BILLING_API || 'http://localhost:8083',
+  customer: env.VITE_CUSTOMER_API || API,
+  waiter: env.VITE_WAITER_API || API,
+  kitchen: env.VITE_KITCHEN_API || API,
+  billing: env.VITE_BILLING_API || API,
+  owner: env.VITE_OWNER_API || API,
 };
 
 // Auth context set by the AuthProvider after login: a bearer token + the

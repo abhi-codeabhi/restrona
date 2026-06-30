@@ -59,7 +59,7 @@ function withCors(inner) {
   return http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Headers', 'content-type, x-tenant-id');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type, x-tenant-id, authorization');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
     res.setHeader('Access-Control-Max-Age', '86400');
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }

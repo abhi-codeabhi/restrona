@@ -76,11 +76,17 @@ export default function Kitchen() {
     }
   }
 
-  // Initial load + 3s poll of the board (cleared on unmount).
+  // Initial load + poll of the board (cleared on unmount). Polling pauses while
+  // the tab is hidden so we don't fire network calls nobody is watching, and
+  // refetches once on return so the board is fresh the moment it's focused.
   useEffect(() => {
     refresh(true);
-    const poll = setInterval(() => refresh(false), POLL_MS);
-    return () => clearInterval(poll);
+    const poll = setInterval(() => {
+      if (document.visibilityState === 'visible') refresh(false);
+    }, POLL_MS);
+    const onVis = () => { if (document.visibilityState === 'visible') refresh(false); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

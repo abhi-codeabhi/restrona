@@ -1,68 +1,33 @@
-# Render Blueprint — deploys the Restorna BFFs as Docker web services.
-# Same image; APP selects the BFF. Render injects PORT (bin/serve.js reads it).
-# Set ALLOWED_ORIGIN to your Vercel URL so the browser front-end can call these.
-# Set DATABASE_URL (Supabase pooler) on restorna-ordering for persistence.
+# Render Blueprint — Restorna on Render + Supabase.
+#
+# ONE backend service (restorna-api) runs every surface over a SHARED store and
+# the order-flow saga, so a customer order actually reaches the kitchen, waiter
+# and billing. The front-end is a static site that talks to that one API.
+#
+# Durable: set DATABASE_URL on restorna-api to your Supabase pooler connection
+# string (Project Settings → Database → Connection pooling, "Transaction" mode).
+# Run infra/migrations 001→002→003→004 in the Supabase SQL editor first.
+#
+# After first deploy: copy the restorna-api URL into the web service's
+# VITE_API_URL, and set restorna-api's ALLOWED_ORIGIN to the restorna-web URL.
 services:
   - type: web
-    name: restorna-customer
+    name: restorna-api
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
-      - { key: APP, value: customer }
+      - { key: APP, value: api }
+      # Front-end origin allowed by CORS (set to the restorna-web URL).
       - { key: ALLOWED_ORIGIN, sync: false }
+      # Supabase pooler URL → durable Postgres. Leave unset to run in-memory (demo).
       - { key: DATABASE_URL, sync: false }
 
-  - type: web
-    name: restorna-waiter
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    healthCheckPath: /healthz
-    autoDeploy: true
-    envVars:
-      - { key: APP, value: waiter }
-      - { key: ALLOWED_ORIGIN, sync: false }
-
-  - type: web
-    name: restorna-kitchen
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    healthCheckPath: /healthz
-    autoDeploy: true
-    envVars:
-      - { key: APP, value: kitchen }
-      - { key: ALLOWED_ORIGIN, sync: false }
-
-  - type: web
-    name: restorna-billing
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    healthCheckPath: /healthz
-    autoDeploy: true
-    envVars:
-      - { key: APP, value: billing }
-      - { key: ALLOWED_ORIGIN, sync: false }
-
-  - type: web
-    name: restorna-owner
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    healthCheckPath: /healthz
-    autoDeploy: true
-    envVars:
-      - { key: APP, value: owner }
-      - { key: ALLOWED_ORIGIN, sync: false }
-
-  # Front-end as a Render Static Site (no Vercel needed). Builds the Vite app and
-  # serves dist/ from a CDN, with SPA rewrite. Set the VITE_*_API vars (build-time)
-  # to the BFF URLs above in the dashboard, then set each BFF's ALLOWED_ORIGIN to
-  # this site's URL.
+  # Front-end as a Render Static Site: builds the Vite PWA, serves dist/ from a
+  # CDN with SPA rewrite. Set VITE_API_URL (build-time) to the restorna-api URL,
+  # and VITE_TENANT_ID to the tenant the public QR resolves to.
   - type: web
     name: restorna-web
     runtime: static
@@ -71,11 +36,10 @@ services:
     staticPublishPath: dist
     autoDeploy: true
     envVars:
-      - { key: VITE_CUSTOMER_API, sync: false }
-      - { key: VITE_WAITER_API, sync: false }
-      - { key: VITE_KITCHEN_API, sync: false }
-      - { key: VITE_BILLING_API, sync: false }
-      - { key: VITE_OWNER_API, sync: false }
+      - { key: VITE_API_URL, sync: false }
       - { key: VITE_TENANT_ID, value: acme }
+      # Supabase Auth (OTP). Leave blank to keep every surface open.
+      - { key: VITE_SUPABASE_URL, sync: false }
+      - { key: VITE_SUPABASE_ANON_KEY, sync: false }
     routes:
       - { type: rewrite, source: /*, destination: /index.html }
