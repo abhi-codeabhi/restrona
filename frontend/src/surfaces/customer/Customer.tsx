@@ -22,7 +22,10 @@ const SERVICES = [
 ];
 
 export default function Customer() {
-  const [tab, setTab] = useState<'menu' | 'cart' | 'pay' | 'thanks'>('menu');
+  // Dine-in: no payment at order time. Place an order (it goes to the kitchen),
+  // keep ordering across the meal, and ask for the bill at the end.
+  const [tab, setTab] = useState<'menu' | 'cart' | 'sent'>('menu');
+  const [placing, setPlacing] = useState(false);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +54,26 @@ export default function Customer() {
       if (qty <= 0) delete next[item.id]; else next[item.id] = { qty, item };
       return next;
     });
+  }
+
+  // Send the cart to the kitchen as an order. No payment — the bill is settled at
+  // the end of the meal by the waiter/billing agent. Clears the cart on success
+  // so the guest can immediately start another round.
+  async function placeOrder() {
+    const lines = Object.values(cart).map((c) => ({
+      menuItemId: c.item.id, unitPriceMinor: c.item.priceMinor, qty: c.qty,
+    }));
+    if (lines.length === 0) return;
+    setPlacing(true);
+    try {
+      await customerApi.placeOrder({ tableId: 'T12', items: lines });
+      setCart({});
+      setTab('sent');
+    } catch (e: any) {
+      flash(e?.message || 'Could not send your order — please try again');
+    } finally {
+      setPlacing(false);
+    }
   }
 
   const cats = useMemo(() => {
@@ -88,9 +111,11 @@ export default function Customer() {
         </div>
       )}
 
-      {tab === 'cart' && <Cart cart={cart} subtotal={subtotal} onBack={() => setTab('menu')} onPlace={() => setTab('pay')} setQty={setQty} />}
-      {tab === 'pay' && <Checkout subtotal={subtotal} onPaid={() => setTab('thanks')} onBack={() => setTab('cart')} flash={flash} />}
-      {tab === 'thanks' && <Thanks onDone={() => { setCart({}); setTab('menu'); }} />}
+      {tab === 'cart' && <Cart cart={cart} subtotal={subtotal} placing={placing} onBack={() => setTab('menu')} onPlace={placeOrder} setQty={setQty} />}
+      {tab === 'sent' && <Sent onMore={() => setTab('menu')} onBill={async () => {
+        try { await customerApi.serviceRequest({ type: 'bill', table: 12 }); flash('Bill requested — a server is on the way'); }
+        catch (e: any) { flash(e?.message || 'Could not request the bill'); }
+      }} />}
 
       {tab === 'menu' && (
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, maxWidth: 480, margin: '0 auto', display: 'flex', alignItems: 'center', padding: '14px 16px', borderTop: '0.5px solid var(--border)', background: 'var(--surface)' }}>
@@ -191,12 +216,12 @@ function PulseTotal({ minor }: { minor: number }) {
   return <div style={{ fontWeight: 600, fontSize: 14, color: pulse ? 'var(--g)' : 'var(--ink)', transition: 'color .3s' }}>{money(minor)}</div>;
 }
 
-function Cart({ cart, subtotal, onBack, onPlace, setQty }: any) {
+function Cart({ cart, subtotal, placing, onBack, onPlace, setQty }: any) {
   const lines = Object.values(cart) as any[];
   const tax = Math.round(subtotal * 0.05);
   return (
     <div style={{ padding: '14px 16px' }}>
-      <div className="kicker">Your order</div><h2 style={{ fontSize: 16, margin: '2px 0 12px' }}>Table 12</h2>
+      <div className="kicker">This round</div><h2 style={{ fontSize: 16, margin: '2px 0 12px' }}>Table 12</h2>
       {lines.length === 0 && <div className="rz-empty">Your cart is empty.</div>}
       {lines.map((l) => (
         <div key={l.item.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 0', borderBottom: '0.5px solid var(--border)' }}>
@@ -206,58 +231,25 @@ function Cart({ cart, subtotal, onBack, onPlace, setQty }: any) {
       ))}
       {lines.length > 0 && <>
         <Row k="Subtotal" v={money(subtotal)} /><Row k="GST (5%)" v={money(tax)} />
-        <Row k="Total" v={money(subtotal + tax)} bold />
-        <button className="rz-cta" style={{ marginTop: 14 }} onClick={onPlace}>Place order</button>
+        <Row k="Running total" v={money(subtotal + tax)} bold />
+        <div className="xs muted" style={{ margin: '8px 0 0' }}>No payment now — settle the full bill at the end of your meal.</div>
+        <button className="rz-cta" style={{ marginTop: 12 }} disabled={placing} onClick={onPlace}>
+          {placing ? 'Sending to kitchen…' : 'Send order to kitchen'}
+        </button>
       </>}
       <button className="rz-ghost" style={{ marginTop: 9 }} onClick={onBack}>Add more dishes</button>
     </div>
   );
 }
 
-function Checkout({ subtotal, onPaid, onBack, flash }: any) {
-  const [coupon, setCoupon] = useState('');
-  const [quote, setQuote] = useState<any>(null);
-  const tax = Math.round(subtotal * 0.05);
-  const total = (quote ? subtotal - (quote.discountMinor || 0) : subtotal) + tax;
-  async function applyCoupon() {
-    try { setQuote(await customerApi.quote({ subtotalMinor: subtotal, couponCode: coupon })); flash('Coupon applied'); }
-    catch (e: any) { flash(e.message || 'Coupon rejected'); }
-  }
-  return (
-    <div style={{ padding: '14px 16px' }}>
-      <div className="kicker">Checkout</div><h2 style={{ fontSize: 16, margin: '2px 0 12px' }}>Pay your way</h2>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <input placeholder="Coupon code" value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-          style={{ flex: 1, height: 38, border: '0.5px solid var(--border)', borderRadius: 10, padding: '0 12px' }} />
-        <button className="rz-ghost" style={{ width: 'auto', padding: '0 16px' }} onClick={applyCoupon}>Apply</button>
-      </div>
-      <Row k="Subtotal" v={money(subtotal)} />
-      {quote?.discountMinor ? <Row k={`Discount ${coupon}`} v={'−' + money(quote.discountMinor)} /> : null}
-      <Row k="GST (5%)" v={money(tax)} />
-      <Row k="Total" v={money(total)} bold />
-      <div className="xs muted" style={{ margin: '8px 0 12px' }}>🔒 Secured · UPI-verified, no card details stored</div>
-      <button className="rz-cta" onClick={onPaid}>Pay {money(total)} by UPI</button>
-      <div className="xs muted" style={{ textAlign: 'center', marginTop: 11 }}>Tip (optional) · <b style={{ color: 'var(--g)' }}>skip</b> · 5% · 10%</div>
-      <button className="rz-ghost" style={{ marginTop: 10 }} onClick={onBack}>Back</button>
-    </div>
-  );
-}
-
-function Thanks({ onDone }: any) {
-  const [stars, setStars] = useState(0);
+function Sent({ onMore, onBill }: any) {
   return (
     <div style={{ padding: '34px 18px', textAlign: 'center' }}>
       <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#E6EFE8', color: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, margin: '0 auto 14px' }}>✓</div>
-      <h2 style={{ fontSize: 19, margin: 0 }}>Thank you, enjoy your meal</h2>
-      <div className="sm muted" style={{ marginTop: 7 }}>A receipt has been sent to your phone</div>
-      <div style={{ fontWeight: 600, marginTop: 22 }}>How was everything?</div>
-      <div style={{ display: 'flex', gap: 9, justifyContent: 'center', margin: '12px 0 6px' }}>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button key={n} onClick={() => setStars(n)} aria-label={`${n} stars`} style={{ border: 'none', background: 'none', fontSize: 30, cursor: 'pointer', color: n <= stars ? 'var(--g)' : 'var(--border2)' }}>★</button>
-        ))}
-      </div>
-      <div className="xs muted">{stars >= 4 ? 'Thank you — see you again!' : stars ? 'Thanks — we’ll do better.' : 'Tap to rate your visit'}</div>
-      <button className="rz-cta" style={{ marginTop: 20 }} onClick={onDone}>♥ See you again at Restorna</button>
+      <h2 style={{ fontSize: 19, margin: 0 }}>Order sent to the kitchen</h2>
+      <div className="sm muted" style={{ marginTop: 7 }}>Your dishes are being prepared. Order as many rounds as you like — you’ll pay once at the end.</div>
+      <button className="rz-cta" style={{ marginTop: 22 }} onClick={onMore}>Order more dishes</button>
+      <button className="rz-ghost" style={{ marginTop: 10 }} onClick={onBill}>Ask for the bill</button>
     </div>
   );
 }
