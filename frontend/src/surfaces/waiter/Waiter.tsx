@@ -258,7 +258,7 @@ export default function Waiter() {
 
       {tab === 'now' && (
         <div style={{ padding: '10px 14px' }}>
-          {loading && <div className="rz-empty">Reading the floor…</div>}
+          {loading && <FeedSkeleton />}
           {error && !loading && (
             <div className="rz-empty" style={{ color: 'var(--red)' }}>
               {error}<br />
@@ -266,7 +266,7 @@ export default function Waiter() {
             </div>
           )}
           {!loading && !error && feed.length === 0 && (
-            <div className="rz-empty"><span className="ic">✓</span>Floor is calm — nothing waiting.</div>
+            <div className="rz-empty"><span className="ic">✓</span>All caught up — nothing waiting on the floor.</div>
           )}
           {!loading && !error && feed.map((it, i) => (
             <FeedCard
@@ -283,7 +283,7 @@ export default function Waiter() {
 
       {tab === 'floor' && (
         <div style={{ padding: '10px 14px' }}>
-          {loading && <div className="rz-empty">Loading the floor plan…</div>}
+          {loading && <FloorSkeleton />}
           {error && !loading && (
             <div className="rz-empty" style={{ color: 'var(--red)' }}>
               {error}<br />
@@ -334,21 +334,55 @@ function Header({ openCount, readyCount }: any) {
   );
 }
 
+function FeedSkeleton() {
+  return (
+    <div aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="rz-card" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: i === 0 ? '16px 14px' : '13px 14px', marginBottom: i === 0 ? 14 : 9, borderLeft: `${i === 0 ? 6 : 3}px solid var(--border2)` }}>
+          <div className="rz-skel" style={{ width: i === 0 ? 50 : 44, height: i === 0 ? 50 : 44, borderRadius: 12, flex: '0 0 auto' }} />
+          <div style={{ flex: 1 }}>
+            <div className="rz-skel" style={{ height: 14, width: '45%', marginBottom: 8 }} />
+            <div className="rz-skel" style={{ height: 11, width: '70%' }} />
+          </div>
+          <div className="rz-skel" style={{ width: 100, height: 56, borderRadius: 14, flex: '0 0 auto' }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FloorSkeleton() {
+  return (
+    <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+      {Array.from({ length: 9 }).map((_, i) => (
+        <div key={i} className="rz-skel" style={{ aspectRatio: '1 / 1', borderRadius: 16 }} />
+      ))}
+    </div>
+  );
+}
+
 function Tabs({ tab, setTab, pending, occupied }: any) {
   const item = (id: 'now' | 'floor', label: string, badge: number) => {
     const on = tab === id;
     return (
-      <button onClick={() => setTab(id)} style={{
-        flex: 1, padding: '12px 0', border: 'none', background: 'transparent', cursor: 'pointer',
-        fontSize: 14, fontWeight: 600, color: on ? 'var(--g)' : 'var(--muted)',
-        borderBottom: `2px solid ${on ? 'var(--g)' : 'transparent'}`,
-      }}>
-        {label}{badge ? <span style={{ marginLeft: 6, fontSize: 11, background: on ? 'var(--g)' : 'var(--border2)', color: '#fff', borderRadius: 20, padding: '1px 7px' }}>{badge}</span> : null}
+      <button
+        onClick={() => setTab(id)}
+        className={on ? 'on' : ''}
+        aria-pressed={on}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontWeight: 600 }}
+      >
+        {label}
+        {badge ? (
+          <span className="rz-num" style={{
+            fontSize: 11, lineHeight: 1, fontWeight: 700, minWidth: 18, textAlign: 'center',
+            background: on ? 'var(--g)' : 'var(--border2)', color: '#fff', borderRadius: 20, padding: '2px 7px',
+          }}>{badge}</span>
+        ) : null}
       </button>
     );
   };
   return (
-    <div style={{ display: 'flex', borderBottom: '0.5px solid var(--border)', position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 5 }}>
+    <div className="rz-seg" style={{ padding: '10px 14px', position: 'sticky', top: 0, background: 'var(--bg)', zIndex: 5, borderBottom: '0.5px solid var(--border)' }}>
       {item('now', 'Now', pending)}
       {item('floor', 'Floor', occupied)}
     </div>
@@ -360,40 +394,48 @@ function FeedCard({ it, top, now, busy, onAct }: { it: FeedItem; top: boolean; n
   const isServe = it.kind === 'serve';
   const isNudge = it.kind === 'nudge';
   const isBill = it.kind === 'request' && it.req?.type === 'bill';
+  // Each intent reads instantly by colour: serve=green, generate bill=brass,
+  // overdue=red, nudge=brass, plain acknowledge=neutral surface.
   const cta = isServe ? 'Serve' : isBill ? 'Generate bill' : isNudge ? 'Done' : 'Acknowledge';
+  const isAck = it.kind === 'request' && !isBill;
+  const btnBg = isServe ? 'var(--green)' : it.escalated ? 'var(--red)' : isAck ? 'var(--surface)' : 'var(--g)';
+  const btnFg = isAck && !it.escalated ? 'var(--ink)' : '#fff';
+  const btnBorder = isAck && !it.escalated ? '1px solid var(--border2)' : 'none';
+  const aria = `${cta} for Table ${it.table} — ${it.title}, waiting ${ageLabel(it.since, now)}`;
   return (
     <div
-      className="rz-card"
+      className="rz-card rz-tap"
       style={{
-        display: 'flex', alignItems: 'center', gap: 12, padding: '14px 14px 14px 14px',
-        marginBottom: 10, overflow: 'hidden',
+        display: 'flex', alignItems: 'center', gap: 12, padding: top ? '16px 14px' : '13px 14px',
+        marginBottom: top ? 14 : 9, overflow: 'hidden',
+        border: top ? `1.5px solid ${accent}` : '0.5px solid var(--border)',
         borderLeft: `${top ? 6 : 3}px solid ${accent}`,
         background: top ? (it.escalated ? '#FBEEEE' : 'var(--gs)') : 'var(--surface)',
         boxShadow: top ? 'var(--shadow)' : undefined,
         animation: 'rz-in .25s ease',
       }}
     >
-      <div style={{ width: 46, height: 46, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flex: '0 0 auto' }}>{it.icon}</div>
+      <div style={{ width: top ? 50 : 44, height: top ? 50 : 44, borderRadius: 12, background: 'var(--surface)', border: '0.5px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: top ? 24 : 21, flex: '0 0 auto' }}>{it.icon}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontWeight: 700, fontSize: 16 }}>Table {it.table}</span>
-          {it.escalated && <span className="rz-pill" style={{ background: '#F6DADA', color: 'var(--red)', fontWeight: 600 }}>Overdue</span>}
-          {top && !it.escalated && <span className="rz-pill" style={{ background: 'var(--g)', color: '#fff', fontWeight: 600 }}>Next</span>}
+          <span style={{ fontWeight: 700, fontSize: top ? 17 : 16 }}>Table {it.table}</span>
+          {it.escalated && <span className="rz-pill" style={{ background: '#F6DADA', color: 'var(--red)', fontWeight: 700, letterSpacing: '.3px' }}>OVERDUE</span>}
+          {top && !it.escalated && <span className="rz-pill" style={{ background: 'var(--g)', color: '#fff', fontWeight: 700, letterSpacing: '.3px' }}>NEXT</span>}
         </div>
         <div className="sm" style={{ marginTop: 2 }}>{it.title}</div>
-        {it.subtitle && <div className="xs" style={{ marginTop: 2, fontWeight: 600 }}>{it.subtitle}</div>}
-        <div className="xs muted" style={{ marginTop: 3, color: it.escalated ? 'var(--red)' : 'var(--muted)' }}>
+        {it.subtitle && <div className="xs muted" style={{ marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.subtitle}</div>}
+        <div className="xs muted rz-num" style={{ marginTop: 3, color: it.escalated ? 'var(--red)' : 'var(--muted)', fontWeight: it.escalated ? 600 : 400 }}>
           waiting {ageLabel(it.since, now)}
         </div>
       </div>
       <button
         onClick={onAct}
         disabled={busy}
+        aria-label={aria}
         style={{
-          flex: '0 0 auto', border: 'none', borderRadius: 14, cursor: busy ? 'default' : 'pointer',
-          padding: '0 18px', height: 52, minWidth: 96, fontSize: 15, fontWeight: 700, color: '#fff',
-          background: isServe ? 'var(--green)' : it.escalated ? 'var(--red)' : 'var(--g)',
-          opacity: busy ? 0.6 : 1, transition: 'transform .1s',
+          flex: '0 0 auto', border: btnBorder, borderRadius: 14, cursor: busy ? 'default' : 'pointer',
+          padding: '0 18px', height: 56, minWidth: 100, fontSize: 15, fontWeight: 700, color: btnFg,
+          background: btnBg, opacity: busy ? 0.6 : 1, transition: 'transform .1s ease, filter .15s ease',
         }}
       >
         {busy ? '…' : cta}
@@ -405,21 +447,30 @@ function FeedCard({ it, top, now, busy, onAct }: { it: FeedItem; top: boolean; n
 function TableTile({ t, onTap }: { t: Table; onTap: () => void }) {
   const color = STATUS_COLOR[t.status] || 'var(--muted)';
   const free = t.status === 'free';
+  const label = STATUS_LABEL[t.status] || t.status;
   return (
     <button
       onClick={onTap}
-      disabled={free}
+      className="rz-tap"
+      aria-label={free ? `Table ${t.n} — free, tap to seat a party` : `Table ${t.n} — ${label}${t.waiterId ? `, ${prettyWaiter(t.waiterId)}` : ''}`}
       style={{
-        aspectRatio: '1 / 1', borderRadius: 16, cursor: free ? 'default' : 'pointer',
+        aspectRatio: '1 / 1', borderRadius: 16, cursor: 'pointer',
         border: `1px solid ${free ? 'var(--border)' : color}`,
         background: free ? 'var(--s1)' : 'var(--surface)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        gap: 4, padding: 8, position: 'relative', opacity: free ? 0.7 : 1,
+        gap: 3, padding: 8, position: 'relative', opacity: free ? 0.85 : 1,
+        borderTop: free ? `1px solid var(--border)` : `3px solid ${color}`,
       }}
     >
-      <span style={{ position: 'absolute', top: 8, right: 8, width: 9, height: 9, borderRadius: '50%', background: color }} />
-      <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)' }}>{t.n}</span>
-      <span className="xs" style={{ color, fontWeight: 600 }}>{STATUS_LABEL[t.status] || t.status}</span>
+      <span style={{ fontSize: 28, fontWeight: 700, color: 'var(--ink)', lineHeight: 1 }} className="rz-num">{t.n}</span>
+      {free ? (
+        <span className="xs" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--g)', fontWeight: 600 }}>+ Seat</span>
+      ) : (
+        <span className="xs" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color, fontWeight: 600 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, display: 'inline-block' }} />
+          {label}
+        </span>
+      )}
       {t.waiterId && <span className="xs muted" style={{ fontSize: 9.5 }}>{prettyWaiter(t.waiterId)}</span>}
     </button>
   );
@@ -433,13 +484,16 @@ function prettyWaiter(id: string) {
 
 function Legend() {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16, padding: '12px 4px 0', borderTop: '0.5px solid var(--border)' }}>
-      {STATUS.map((s) => (
-        <span key={s} className="xs" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--muted)' }}>
-          <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLOR[s], display: 'inline-block' }} />
-          {STATUS_LABEL[s]}
-        </span>
-      ))}
+    <div style={{ marginTop: 18, padding: '14px 4px 0', borderTop: '0.5px solid var(--border)' }}>
+      <div className="kicker" style={{ marginBottom: 8 }}>Status key</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 14px' }}>
+        {STATUS.map((s) => (
+          <span key={s} className="xs" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--muted)' }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLOR[s], display: 'inline-block', flex: '0 0 auto' }} />
+            {STATUS_LABEL[s]}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -463,12 +517,14 @@ function MoveSheet({ src, tables, onClose, onMove, onBill }: { src: Table; table
             const free = t.status === 'free';
             const color = STATUS_COLOR[t.status] || 'var(--muted)';
             return (
-              <button key={t.n} onClick={() => onMove(t.n)} style={{
-                borderRadius: 14, border: `1px solid ${free ? 'var(--border)' : color}`,
-                background: free ? 'var(--s1)' : 'var(--surface)', cursor: 'pointer',
-                padding: '12px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-              }}>
-                <span style={{ fontSize: 20, fontWeight: 700 }}>{t.n}</span>
+              <button key={t.n} onClick={() => onMove(t.n)} className="rz-tap"
+                aria-label={free ? `Move Table ${src.n} to free Table ${t.n}` : `Swap Table ${src.n} with Table ${t.n} (${STATUS_LABEL[t.status] || t.status})`}
+                style={{
+                  borderRadius: 14, border: `1px solid ${free ? 'var(--border)' : color}`,
+                  background: free ? 'var(--s1)' : 'var(--surface)', cursor: 'pointer',
+                  padding: '12px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                }}>
+                <span className="rz-num" style={{ fontSize: 20, fontWeight: 700 }}>{t.n}</span>
                 <span className="xs" style={{ color: free ? 'var(--g)' : color, fontWeight: 600 }}>{free ? 'Move here' : 'Swap'}</span>
               </button>
             );

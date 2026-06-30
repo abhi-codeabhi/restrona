@@ -31,3 +31,21 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 @keyframes rz-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .rz-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font-size:12px;padding:9px 15px;border-radius:20px;opacity:0;transition:all .25s;z-index:50;pointer-events:none}
 .rz-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* --- added primitives: consistent feedback, hierarchy, calm motion --- */
+.rz-cta:disabled,.rz-ghost:disabled{opacity:.5;cursor:default}
+.rz-cta{transition:transform .08s ease, filter .15s ease;min-height:48px}
+.rz-ghost{transition:background .15s ease, border-color .15s ease;min-height:44px}
+.rz-ghost:hover{background:var(--s1);border-color:var(--g)}
+.rz-tap{cursor:pointer;transition:transform .1s ease, box-shadow .15s ease, border-color .15s ease}
+.rz-tap:hover{border-color:var(--border2);box-shadow:var(--shadow)}
+.rz-tap:active{transform:scale(.985)}
+.rz-chip{font-size:12px;padding:6px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .12s ease}
+.rz-chip.on{background:var(--gs);border-color:var(--g);color:var(--gtx);font-weight:600}
+.rz-seg{display:flex;gap:6px}
+.rz-seg button{flex:1;padding:9px;border-radius:10px;border:1px solid var(--border2);background:var(--surface);color:var(--muted);font-size:13px;cursor:pointer}
+.rz-seg button.on{background:var(--gs);border-color:var(--g);color:var(--gtx);font-weight:600}
+.rz-skel{background:linear-gradient(90deg,var(--s1) 25%,#EFEAE0 37%,var(--s1) 63%);background-size:400% 100%;animation:rz-shimmer 1.3s ease infinite;border-radius:8px}
+@keyframes rz-shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+.rz-num{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important}}

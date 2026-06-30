@@ -25,17 +25,15 @@ export default function Manager() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 16px 60px' }}>
-      <div style={{ padding: '18px 0 12px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <div className="kicker">Manager</div>
-          <div style={{ fontSize: 21, fontWeight: 600 }}>Console</div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <Tab on={tab === 'team'} onClick={() => setTab('team')}>Team</Tab>
-          <Tab on={tab === 'tables'} onClick={() => setTab('tables')}>Tables (QR)</Tab>
-          <Tab on={tab === 'menu'} onClick={() => setTab('menu')}>Menu</Tab>
-          <Tab on={tab === 'nudges'} onClick={() => setTab('nudges')}>Nudges</Tab>
-        </div>
+      <div style={{ padding: '18px 0 14px' }}>
+        <div className="kicker">Manager</div>
+        <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-0.2px' }}>Console</div>
+      </div>
+      <div className="rz-seg" role="tablist" aria-label="Console sections" style={{ marginBottom: 18, flexWrap: 'wrap' }}>
+        <Tab on={tab === 'team'} onClick={() => setTab('team')}>Team</Tab>
+        <Tab on={tab === 'tables'} onClick={() => setTab('tables')}>Tables (QR)</Tab>
+        <Tab on={tab === 'menu'} onClick={() => setTab('menu')}>Menu</Tab>
+        <Tab on={tab === 'nudges'} onClick={() => setTab('nudges')}>Nudges</Tab>
       </div>
 
       {tab === 'team' && <TeamTab flash={flash} />}
@@ -50,12 +48,7 @@ export default function Manager() {
 
 function Tab({ on, onClick, children }: any) {
   return (
-    <button onClick={onClick} style={{
-      border: `0.5px solid ${on ? 'var(--g)' : 'var(--border2)'}`,
-      background: on ? 'var(--gs)' : 'var(--surface)',
-      color: on ? 'var(--gtx)' : 'var(--muted)',
-      fontWeight: on ? 600 : 400, fontSize: 13, padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
-    }}>{children}</button>
+    <button role="tab" aria-selected={on} className={on ? 'on' : undefined} onClick={onClick}>{children}</button>
   );
 }
 
@@ -150,19 +143,25 @@ function TeamTab({ flash }: any) {
     <div>
       {/* Roster + add member */}
       <div className="rz-card" style={{ padding: 16, marginBottom: 16 }}>
-        <div className="kicker" style={{ marginBottom: 10 }}>Team</div>
+        <div className="kicker" style={{ marginBottom: 10 }}>Team · {activeStaff.length} active</div>
         {staff.length === 0 && <div className="xs muted">No team members yet — add the first below.</div>}
         {staff.map((s) => (
-          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid var(--border)', opacity: s.disabled ? 0.5 : 1 }}>
+          <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '0.5px solid var(--border)', opacity: s.disabled ? 0.55 : 1 }}>
             <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{s.name}</span>
-            <span className="rz-pill" style={{ background: s.disabled ? undefined : 'var(--gs)', color: s.disabled ? 'var(--muted)' : (ROLE_COLOR[s.role] || 'var(--gtx)'), textTransform: 'capitalize' }}>{s.role}</span>
+            <span className="rz-pill" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, textTransform: 'capitalize',
+              background: s.disabled ? 'var(--s1)' : 'var(--gs)', color: s.disabled ? 'var(--muted)' : (ROLE_COLOR[s.role] || 'var(--gtx)'),
+            }}>
+              <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: s.disabled ? 'var(--border2)' : (ROLE_COLOR[s.role] || 'var(--g)') }} />
+              {s.role}
+            </span>
             {s.disabled
-              ? <span className="xs muted" style={{ width: 96, textAlign: 'right' }}>Inactive</span>
-              : <button className="rz-ghost" style={{ width: 'auto', padding: '0 14px', height: 32 }} disabled={busy} onClick={() => disable(s)}>Disable</button>}
+              ? <span className="rz-tag" style={{ width: 96, textAlign: 'center' }}>Inactive</span>
+              : <button className="rz-ghost" aria-label={`Set ${s.name} inactive`} style={{ width: 'auto', padding: '0 14px', height: 32, minHeight: 32 }} disabled={busy} onClick={() => disable(s)}>Disable</button>}
           </div>
         ))}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
           <input placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && add()} style={{ ...INPUT, flex: '2 1 150px' }} />
           <select value={role} onChange={(e) => setRole(e.target.value)} style={{ ...INPUT, flex: '1 1 110px', textTransform: 'capitalize' }}>
@@ -182,20 +181,20 @@ function TeamTab({ flash }: any) {
         {waiters.map((w) => {
           const tables = (grouped.m.get(w.id) || []).sort((a, b) => a - b);
           return (
-            <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '0.5px solid var(--border)', flexWrap: 'wrap' }}>
+            <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '0.5px solid var(--border)', flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 600, fontSize: 13.5, width: 110, flex: '0 0 auto' }}>{w.name}</span>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
                 {tables.length === 0 && <span className="xs muted">No tables</span>}
-                {tables.map((n) => <span key={n} className="rz-pill" style={{ background: 'var(--gs)', color: 'var(--gtx)' }}>T{n}</span>)}
+                {tables.map((n) => <span key={n} className="rz-pill rz-num" style={{ background: 'var(--gs)', color: 'var(--gtx)' }}>T{n}</span>)}
               </div>
             </div>
           );
         })}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', flexWrap: 'wrap' }}>
           <span className="muted" style={{ fontWeight: 600, fontSize: 13.5, width: 110, flex: '0 0 auto' }}>Unassigned</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-            {grouped.unassigned.length === 0 && <span className="xs muted">None — every table is covered</span>}
-            {grouped.unassigned.sort((a, b) => a - b).map((n) => <span key={n} className="rz-pill">T{n}</span>)}
+            {grouped.unassigned.length === 0 && <span className="xs" style={{ color: 'var(--green)' }}>✓ Every table is covered</span>}
+            {grouped.unassigned.sort((a, b) => a - b).map((n) => <span key={n} className="rz-pill rz-num" style={{ border: '0.5px dashed var(--border2)', color: 'var(--muted)' }}>T{n}</span>)}
           </div>
         </div>
 
@@ -208,16 +207,17 @@ function TeamTab({ flash }: any) {
                 <option value="">Choose a waiter…</option>
                 {waiters.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
               </select>
-              <div className="xs muted" style={{ marginBottom: 8 }}>Tap the tables to assign — tap again to deselect.</div>
+              <div className="xs muted" style={{ marginBottom: 8 }}>
+                Tap the tables to assign — tap again to deselect.{picked.size > 0 && <b style={{ color: 'var(--gtx)' }}> {picked.size} selected.</b>}
+              </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
                 {floor.map((t) => {
                   const on = picked.has(t.n);
                   return (
-                    <button key={t.n} onClick={() => togglePick(t.n)} style={{
-                      fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 12, cursor: 'pointer',
-                      border: `1px solid ${on ? 'var(--g)' : 'var(--border)'}`,
-                      background: on ? 'var(--g)' : 'var(--surface)', color: on ? '#fff' : 'var(--ink)',
-                    }}>T{t.n}</button>
+                    <button key={t.n} onClick={() => togglePick(t.n)}
+                      aria-pressed={on} aria-label={`Table ${t.n}${on ? ', selected' : ''}`}
+                      className={'rz-chip rz-num' + (on ? ' on' : '')}
+                      style={{ fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 12 }}>T{t.n}</button>
                   );
                 })}
               </div>
@@ -291,24 +291,25 @@ function TablesTab({ flash }: any) {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-        <div className="sm muted" style={{ flex: '1 1 220px' }}>Each table gets its own QR. Guests scan it to open the table-scoped menu — no login, no app.</div>
-        <button className="rz-cta" style={{ width: 'auto', padding: '0 18px', flex: '0 0 auto' }} disabled={floor.length === 0} onClick={() => printTables(floor)}>Print all</button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+        <div className="sm muted" style={{ flex: '1 1 220px', lineHeight: 1.55 }}>Each table gets its own QR. Guests scan it to open the table-scoped menu — no login, no app.</div>
+        <button className="rz-cta" style={{ width: 'auto', padding: '0 18px', flex: '0 0 auto' }} disabled={floor.length === 0} onClick={() => printTables(floor)}>Print all {floor.length > 0 ? floor.length : ''} QR codes</button>
       </div>
 
       {floor.length === 0 && <div className="rz-empty">No tables on the floor yet.</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
         {floor.map((t) => (
-          <div key={t.n} className="rz-card" style={{ padding: 18, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 30, fontWeight: 700 }}>Table {t.n}</div>
-            <div style={{ width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div key={t.n} className="rz-card rz-tap" style={{ padding: 18, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div className="kicker">Table</div>
+            <div className="rz-num" style={{ fontSize: 40, fontWeight: 700, lineHeight: 1, marginTop: -2 }}>{t.n}</div>
+            <div style={{ width: 160, height: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--s1)', borderRadius: 10, border: '0.5px solid var(--border)' }}>
               {qr[t.n]
-                ? <img src={qr[t.n]} alt={`QR for table ${t.n}`} width={160} height={160} style={{ borderRadius: 8 }} />
-                : <span className="xs muted">Generating…</span>}
+                ? <img src={qr[t.n]} alt={`QR code for table ${t.n} — scan to open the menu`} width={148} height={148} style={{ borderRadius: 6 }} />
+                : <span className="rz-skel" style={{ width: 148, height: 148, borderRadius: 6 }} />}
             </div>
             <div className="xs muted">Scan to view the menu &amp; order</div>
-            <button className="rz-ghost" style={{ width: 'auto', padding: '0 18px' }} onClick={() => printTables([t])}>Print</button>
+            <button className="rz-ghost" aria-label={`Print QR for table ${t.n}`} style={{ width: 'auto', padding: '0 18px', minHeight: 38 }} onClick={() => printTables([t])}>Print this table</button>
           </div>
         ))}
       </div>
@@ -358,16 +359,24 @@ function MenuTab({ flash }: any) {
         <div key={cat} className="rz-card" style={{ padding: 16, marginBottom: 14 }}>
           <div className="kicker" style={{ marginBottom: 8 }}>{cat}</div>
           {list.map((it) => (
-            <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '0.5px solid var(--border)', opacity: it.available ? 1 : 0.55 }}>
+            <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderBottom: '0.5px solid var(--border)', opacity: it.available ? 1 : 0.6 }}>
               <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{it.name}</span>
-              {!it.available && <span className="rz-pill">Off menu</span>}
-              <span className="sm" style={{ width: 78, textAlign: 'right' }}>{money(it.priceMinor)}</span>
-              <button onClick={() => toggle(it)} disabled={busy === it.id} style={{
-                width: 'auto', minWidth: 108, padding: '0 14px', height: 32, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                border: `1px solid ${it.available ? 'var(--g)' : 'var(--border2)'}`,
-                background: it.available ? 'var(--gs)' : 'var(--surface)',
-                color: it.available ? 'var(--gtx)' : 'var(--muted)',
-              }}>{busy === it.id ? '…' : it.available ? 'Available' : 'Unavailable'}</button>
+              {!it.available && <span className="rz-pill" style={{ background: 'var(--s1)', color: 'var(--muted)', border: '0.5px solid var(--border2)' }}>Off menu</span>}
+              <span className="sm rz-num" style={{ width: 78, textAlign: 'right' }}>{money(it.priceMinor)}</span>
+              <button onClick={() => toggle(it)} disabled={busy === it.id}
+                aria-pressed={it.available} aria-label={`${it.name} is ${it.available ? 'available' : 'unavailable'} — tap to ${it.available ? 'take off menu' : 'put back on menu'}`}
+                style={{
+                  width: 'auto', minWidth: 118, padding: '0 14px', height: 34, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'all .12s ease',
+                  border: `1px solid ${it.available ? 'var(--g)' : 'var(--border2)'}`,
+                  background: it.available ? 'var(--gs)' : 'var(--surface)',
+                  color: it.available ? 'var(--gtx)' : 'var(--muted)',
+                }}>
+                {busy === it.id ? '…' : <>
+                  <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: it.available ? 'var(--green)' : 'var(--border2)' }} />
+                  {it.available ? 'Available' : 'Unavailable'}
+                </>}
+              </button>
             </div>
           ))}
         </div>
@@ -428,24 +437,31 @@ function NudgesTab({ flash }: any) {
             <div key={m.key} style={{ padding: '12px 0', borderBottom: i < NUDGE_META.length - 1 ? '0.5px solid var(--border)' : undefined }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{m.label}</span>
-                <button onClick={() => setEnabled(m.key, !node.enabled)} style={{
-                  width: 'auto', padding: '0 14px', height: 32, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                  border: `1px solid ${node.enabled ? 'var(--g)' : 'var(--border2)'}`,
-                  background: node.enabled ? 'var(--gs)' : 'var(--surface)',
-                  color: node.enabled ? 'var(--gtx)' : 'var(--muted)',
-                }}>{node.enabled ? 'On' : 'Off'}</button>
+                <button onClick={() => setEnabled(m.key, !node.enabled)}
+                  aria-pressed={node.enabled} aria-label={`${m.label} nudge is ${node.enabled ? 'on' : 'off'}`}
+                  style={{
+                    width: 'auto', padding: '0 14px', height: 34, borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                    display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all .12s ease',
+                    border: `1px solid ${node.enabled ? 'var(--g)' : 'var(--border2)'}`,
+                    background: node.enabled ? 'var(--gs)' : 'var(--surface)',
+                    color: node.enabled ? 'var(--gtx)' : 'var(--muted)',
+                  }}>
+                  <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: node.enabled ? 'var(--green)' : 'var(--border2)' }} />
+                  {node.enabled ? 'On' : 'Off'}
+                </button>
               </div>
-              <div className="xs muted" style={{ margin: '6px 0 8px' }}>{m.blurb}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: node.enabled ? 1 : 0.5 }}>
+              <div className="xs muted" style={{ margin: '6px 0 9px', lineHeight: 1.5 }}>{m.blurb}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: node.enabled ? 1 : 0.45 }}>
                 <input type="number" min={0} value={minutes} disabled={!node.enabled}
+                  aria-label={`${m.label} delay in minutes`}
                   onChange={(e) => setMinutes(m.key, m.secsField, Number(e.target.value))}
-                  style={{ ...INPUT, width: 84 }} />
-                <span className="xs muted">minutes</span>
+                  style={{ ...INPUT, width: 84, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }} />
+                <span className="xs muted">minutes after</span>
               </div>
             </div>
           );
         })}
-        <button className="rz-cta" style={{ marginTop: 16 }} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+        <button className="rz-cta" style={{ marginTop: 18 }} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save nudge settings'}</button>
       </div>
     </div>
   );

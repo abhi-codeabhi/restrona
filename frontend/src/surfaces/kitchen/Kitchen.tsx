@@ -31,10 +31,10 @@ const STATION_COLORS: Record<string, string> = {
 };
 const stationColor = (s: string) => STATION_COLORS[s] || 'var(--muted)';
 
-const STATUS_META: Record<ItemStatus, { label: string; bg: string; fg: string }> = {
-  new: { label: 'New', bg: 'var(--s1)', fg: 'var(--muted)' },
-  preparing: { label: 'Preparing', bg: '#FBEFD9', fg: '#8a5a14' },
-  ready: { label: 'Ready', bg: '#E6EFE8', fg: 'var(--green)' },
+const STATUS_META: Record<ItemStatus, { label: string; bg: string; fg: string; icon: string }> = {
+  new: { label: 'New', bg: 'var(--s1)', fg: 'var(--muted)', icon: '○' },
+  preparing: { label: 'Preparing', bg: '#FBEFD9', fg: '#8a5a14', icon: '◐' },
+  ready: { label: 'Ready', bg: '#E6EFE8', fg: 'var(--green)', icon: '✓' },
 };
 
 // Aging thresholds (ms) → visual escalation of a ticket that isn't done yet.
@@ -163,7 +163,22 @@ export default function Kitchen() {
         </div>
       )}
 
-      {loading && <div className="rz-empty" style={{ marginTop: 14 }}>Lighting the stoves…</div>}
+      {loading && (
+        <div
+          aria-busy="true"
+          aria-label="Loading the board"
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginTop: 16, alignItems: 'start' }}
+        >
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="rz-card" style={{ padding: 14 }}>
+              <div className="rz-skel" style={{ height: 22, width: '55%', marginBottom: 14 }} />
+              <div className="rz-skel" style={{ height: 44, marginBottom: 8 }} />
+              <div className="rz-skel" style={{ height: 44, marginBottom: 14 }} />
+              <div className="rz-skel" style={{ height: 48 }} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {!loading && board.length === 0 && (
         <div className="rz-empty" style={{ marginTop: 18, padding: '52px 0' }}>
@@ -207,10 +222,10 @@ function Header({ load, openItems, ticketCount, lateCount }: any) {
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, paddingBottom: 12, borderBottom: '0.5px solid var(--border)' }}>
       <div>
         <div className="kicker">Expo line · Kitchen Display</div>
-        <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: -0.4 }}>The Pass</div>
-        <div className="sm muted" style={{ marginTop: 3 }}>
+        <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>The Pass</div>
+        <div className="sm muted rz-num" style={{ marginTop: 3 }}>
           {ticketCount} open ticket{ticketCount === 1 ? '' : 's'} · {openItems} item{openItems === 1 ? '' : 's'} to cook
-          {lateCount ? <span style={{ color: 'var(--red)', fontWeight: 600 }}> · {lateCount} running late</span> : null}
+          {lateCount ? <span style={{ color: 'var(--red)', fontWeight: 700 }}> · {lateCount} running late</span> : null}
         </div>
       </div>
       <LoadGauge load={load} />
@@ -223,7 +238,7 @@ function LoadGauge({ load }: { load: { level: string; pct: number; color: string
     <div style={{ minWidth: 200 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
         <span className="xs muted">Kitchen load</span>
-        <span className="xs" style={{ color: load.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{load.level}</span>
+        <span className="xs" style={{ color: load.color, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.6 }}>{load.level}</span>
       </div>
       <div style={{ height: 8, borderRadius: 20, background: 'var(--s1)', border: '0.5px solid var(--border)', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: load.pct + '%', background: load.color, borderRadius: 20, transition: 'width .5s ease, background .5s ease' }} />
@@ -240,10 +255,10 @@ function AllDayRail({ entries }: { entries: [string, number][] }) {
       {entries.length === 0 ? (
         <div className="sm muted" style={{ padding: '6px 0' }}>Nothing queued — every dish is plated.</div>
       ) : (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {entries.map(([name, n]) => (
-            <div key={name} className="rz-card" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px 8px 10px' }}>
-              <span style={{ minWidth: 30, height: 30, borderRadius: 9, background: 'var(--ink)', color: '#fff', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 6px' }}>{n}</span>
+            <div key={name} className="rz-card" aria-label={`${n} ${name} still to cook`} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 13px 7px 8px', background: 'var(--s1)' }}>
+              <span className="rz-num" style={{ minWidth: 28, height: 28, borderRadius: 8, background: 'var(--ink)', color: '#fff', fontSize: 15, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 6px' }}>{n}</span>
               <span style={{ fontSize: 14, fontWeight: 600 }}>{name}</span>
             </div>
           ))}
@@ -267,15 +282,15 @@ function TicketCard({ t, now, busy, onAdvance, onBump }: any) {
       style={{
         padding: 0,
         overflow: 'hidden',
-        borderTop: `3px solid ${accent}`,
+        borderTop: `4px solid ${accent}`,
         boxShadow: escalate === 'late' ? '0 0 0 1.5px var(--red)' : 'var(--shadow)',
         animation: escalate === 'late' ? 'rz-pulse-late 2s ease-in-out infinite' : undefined,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 10px', borderBottom: '0.5px solid var(--border)' }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.3 }}>{t.table ? 'Table ' + t.table : t.id}</div>
-          {t.orderId && <div className="xs muted">#{t.orderId}</div>}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, padding: '12px 14px 10px', borderBottom: '0.5px solid var(--border)' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.05 }}>{t.table ? 'Table ' + t.table : t.id}</div>
+          {t.orderId && <div className="xs muted rz-num" style={{ marginTop: 2 }}>#{t.orderId}</div>}
         </div>
         <AgeChip age={age} escalate={escalate} hasTime={!!t.receivedAt} />
       </div>
@@ -292,11 +307,12 @@ function TicketCard({ t, now, busy, onAdvance, onBump }: any) {
 
       <div style={{ padding: '8px 12px 12px' }}>
         <button
-          className="rz-cta"
-          style={{ background: allReady ? 'var(--green)' : 'var(--g)', fontSize: 14 }}
+          className="rz-cta rz-num"
+          aria-label={allReady ? 'Bump ticket — all items ready' : `Bump ticket — ${readyCount} of ${t.items.length} items ready`}
+          style={{ background: allReady ? 'var(--green)' : 'var(--g)', fontSize: 15, fontWeight: 700, minHeight: 52, letterSpacing: 0.2 }}
           onClick={onBump}
         >
-          {allReady ? '✓ Bump · all ready' : `Mark all ready · Bump (${readyCount}/${t.items.length})`}
+          {allReady ? '✓  Bump — all ready' : `Bump ticket  ·  ${readyCount}/${t.items.length} ready`}
         </button>
       </div>
     </div>
@@ -306,32 +322,37 @@ function TicketCard({ t, now, busy, onAdvance, onBump }: any) {
 function ItemRow({ it, onTap, disabled }: { it: KdsItem; onTap: () => void; disabled: boolean }) {
   const meta = STATUS_META[it.status];
   const done = it.status === 'ready';
+  const preparing = it.status === 'preparing';
   return (
     <button
       onClick={onTap}
       disabled={disabled || done}
-      aria-label={`${it.name} — ${meta.label}${done ? '' : ', tap to advance'}`}
+      aria-label={`${it.name}, ${it.station} station — ${meta.label}${done ? '' : ', tap to advance'}`}
       style={{
         width: '100%',
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
+        gap: 11,
         textAlign: 'left',
-        background: 'transparent',
+        background: done ? 'var(--s1)' : preparing ? '#FBEFD9' : 'transparent',
         border: 'none',
+        borderLeft: `3px solid ${done ? 'var(--green)' : preparing ? 'var(--amber)' : 'transparent'}`,
         borderRadius: 10,
-        padding: '11px 8px',
+        minHeight: 56,
+        padding: '12px 10px',
         cursor: done ? 'default' : 'pointer',
         opacity: disabled ? 0.55 : 1,
-        transition: 'opacity .2s',
+        transition: 'opacity .2s, background .2s',
       }}
     >
-      <span style={{ width: 12, height: 12, borderRadius: '50%', flex: '0 0 auto', background: stationColor(it.station) }} title={it.station} />
-      <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 600, color: done ? 'var(--muted)' : 'var(--ink)', textDecoration: done ? 'line-through' : 'none' }}>
+      <span style={{ width: 14, height: 14, borderRadius: '50%', flex: '0 0 auto', background: stationColor(it.station) }} title={it.station} />
+      <span style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 700, color: done ? 'var(--muted)' : 'var(--ink)', textDecoration: done ? 'line-through' : 'none' }}>
         {it.name}
-        <span className="xs muted" style={{ display: 'block', fontWeight: 400, textTransform: 'capitalize', marginTop: 1 }}>{it.station}</span>
+        <span className="xs muted" style={{ display: 'block', fontWeight: 500, textTransform: 'capitalize', marginTop: 1 }}>{it.station}</span>
       </span>
-      <span className="rz-pill" style={{ background: meta.bg, color: meta.fg, fontWeight: 600, flex: '0 0 auto' }}>{meta.label}</span>
+      <span className="rz-pill" style={{ background: meta.bg, color: meta.fg, fontWeight: 700, flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span aria-hidden="true" style={{ fontSize: 12 }}>{meta.icon}</span>{meta.label}
+      </span>
     </button>
   );
 }
@@ -339,10 +360,18 @@ function ItemRow({ it, onTap, disabled }: { it: KdsItem; onTap: () => void; disa
 function AgeChip({ age, escalate, hasTime }: { age: number; escalate: string; hasTime: boolean }) {
   if (!hasTime) return null;
   const color = escalate === 'late' ? 'var(--red)' : escalate === 'warn' ? 'var(--amber)' : 'var(--muted)';
+  const label = escalate === 'late' ? 'Late' : escalate === 'warn' ? 'Aging' : 'On time';
+  const icon = escalate === 'late' ? '▲' : escalate === 'warn' ? '●' : '';
+  const strong = escalate !== 'fresh';
   return (
-    <span className="rz-pill" style={{ background: 'var(--s1)', border: '0.5px solid var(--border)', color, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-      {fmtAge(age)}
-    </span>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flex: '0 0 auto' }}>
+      <span className="rz-pill rz-num" aria-label={`Age ${fmtAge(age)}, ${label}`} style={{ background: strong ? color : 'var(--s1)', border: strong ? 'none' : '0.5px solid var(--border)', color: strong ? '#fff' : 'var(--muted)', fontWeight: 800, fontSize: 14, padding: '3px 11px' }}>
+        {fmtAge(age)}
+      </span>
+      <span className="xs" style={{ color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+        {icon && <span aria-hidden="true">{icon}</span>}{label}
+      </span>
+    </div>
   );
 }
 

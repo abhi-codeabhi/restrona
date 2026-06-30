@@ -59,12 +59,12 @@ export default function Owner() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '0 16px 60px' }}>
-      <div style={{ padding: '18px 0 12px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+      <div style={{ padding: '18px 0 14px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div className="kicker">Owner console</div>
-          <div style={{ fontSize: 21, fontWeight: 600 }}>Restorna · Today</div>
+          <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-0.2px' }}>Restorna · Today</div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div className="rz-seg" role="tablist" aria-label="Owner sections" style={{ flex: '0 0 auto' }}>
           <Tab on={tab === 'insights'} onClick={() => setTab('insights')}>Insights</Tab>
           <Tab on={tab === 'menuiq'} onClick={() => setTab('menuiq')}>Menu IQ</Tab>
         </div>
@@ -92,12 +92,7 @@ export default function Owner() {
 
 function Tab({ on, onClick, children }: any) {
   return (
-    <button onClick={onClick} style={{
-      border: `0.5px solid ${on ? 'var(--g)' : 'var(--border2)'}`,
-      background: on ? 'var(--gs)' : 'var(--surface)',
-      color: on ? 'var(--gtx)' : 'var(--muted)',
-      fontWeight: on ? 600 : 400, fontSize: 13, padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
-    }}>{children}</button>
+    <button role="tab" aria-selected={on} className={on ? 'on' : undefined} onClick={onClick} style={{ flex: '0 0 auto', padding: '9px 18px' }}>{children}</button>
   );
 }
 
@@ -109,8 +104,8 @@ function Insights({ dash }: any) {
   return (
     <div>
       {dash.attention?.length > 0 && (
-        <div className="rz-card" style={{ borderColor: 'var(--amber)', background: '#FBF4E6', padding: '14px 16px', marginBottom: 16 }}>
-          <div className="kicker" style={{ color: 'var(--amber)' }}>Needs attention</div>
+        <div className="rz-card" role="region" aria-label="Needs attention" style={{ borderColor: 'var(--amber)', background: '#FBF4E6', padding: '14px 16px', marginBottom: 16, borderLeft: '3px solid var(--amber)' }}>
+          <div className="kicker" style={{ color: 'var(--amber)' }}>Needs attention · {dash.attention.length}</div>
           <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13, lineHeight: 1.7 }}>
             {dash.attention.map((a: string, i: number) => <li key={i}>{a}</li>)}
           </ul>
@@ -149,11 +144,13 @@ function Insights({ dash }: any) {
 const TONE: Record<string, string> = { green: 'var(--green)', amber: 'var(--amber)', blue: 'var(--blue)', plum: 'var(--plum)' };
 
 function Metric({ label, value, sub, tone }: any) {
+  const c = TONE[tone] || 'var(--muted)';
   return (
-    <div className="rz-card" style={{ padding: 14 }}>
+    <div className="rz-card" style={{ padding: '14px 14px 14px 16px', position: 'relative', overflow: 'hidden' }}>
+      <span aria-hidden style={{ position: 'absolute', left: 0, top: 10, bottom: 10, width: 3, borderRadius: 3, background: c }} />
       <div className="xs muted" style={{ textTransform: 'uppercase', letterSpacing: '.6px' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600, margin: '6px 0 2px' }}>{value}</div>
-      <div className="xs" style={{ color: TONE[tone] || 'var(--muted)' }}>{sub}</div>
+      <div className="rz-num" style={{ fontSize: 24, fontWeight: 600, margin: '6px 0 3px', letterSpacing: '-0.3px' }}>{value}</div>
+      <div className="xs rz-num" style={{ color: c }}>{sub}</div>
     </div>
   );
 }
@@ -172,7 +169,7 @@ function Sparkline({ data }: { data: number[] }) {
   const area = `${pad},${h} ${line} ${w - pad},${h}`;
   const last = pts[pts.length - 1];
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: '100%', height: 70, display: 'block', marginTop: 8 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Net sales by hour, open to close" style={{ width: '100%', height: 70, display: 'block', marginTop: 8 }}>
       <polygon points={area} fill="var(--gs)" />
       <polyline points={line} fill="none" stroke="var(--g)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={last[0]} cy={last[1]} r={3.5} fill="var(--g)" />
@@ -184,12 +181,13 @@ function StationBar({ s }: any) {
   const pct = Math.round(s.load * 100);
   const color = TONE[s.status] || 'var(--g)';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '7px 0' }}>
-      <div className="sm" style={{ width: 70, flex: '0 0 auto' }}>{s.name}</div>
-      <div style={{ flex: 1, height: 8, borderRadius: 6, background: 'var(--s1)', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 6, transition: 'width .4s' }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
+      <div className="sm" style={{ width: 70, flex: '0 0 auto', fontWeight: 600 }}>{s.name}</div>
+      <div role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${s.name} load ${pct} percent`}
+        style={{ flex: 1, height: 8, borderRadius: 6, background: 'var(--s1)', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 6, transition: 'width .4s ease' }} />
       </div>
-      <div className="xs" style={{ width: 38, textAlign: 'right', color }}>{pct}%</div>
+      <div className="xs rz-num" style={{ width: 40, textAlign: 'right', color, fontWeight: 600 }}>{pct}%</div>
     </div>
   );
 }
@@ -253,8 +251,9 @@ function MenuIQ({ menu }: any) {
 
   return (
     <div>
-      <div className="sm muted" style={{ marginBottom: 14 }}>
-        Every dish placed by profit margin × popularity. Tap a dish for its recommended move.
+      <div className="sm muted" style={{ marginBottom: 14, lineHeight: 1.55 }}>
+        Every dish placed by profit margin × popularity — your menu's four families at a glance.
+        Tap any dish for its recommended move.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
         {(['stars', 'puzzles', 'plowhorses', 'dogs'] as const).map((q) => (
@@ -262,14 +261,18 @@ function MenuIQ({ menu }: any) {
         ))}
       </div>
 
-      <div className="rz-card" style={{ marginTop: 16, padding: '14px 16px', minHeight: 64, display: 'flex', alignItems: 'center' }}>
+      <div className="rz-card" style={{ marginTop: 16, padding: '16px', minHeight: 72, display: 'flex', alignItems: 'center', borderLeft: selected ? `3px solid ${QUADRANTS[classify(selected).quadrant].color}` : undefined }}>
         {selected ? (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontWeight: 600 }}>{selected.name}</span>
-              <span className="rz-pill" style={{ background: 'var(--gs)', color: 'var(--gtx)' }}>{QUADRANTS[classify(selected).quadrant].label}</span>
+            <div className="kicker" style={{ marginBottom: 7 }}>Recommended move</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>{selected.name}</span>
+              <span className="rz-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--gs)', color: 'var(--gtx)' }}>
+                <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: QUADRANTS[classify(selected).quadrant].color }} />
+                {QUADRANTS[classify(selected).quadrant].label}
+              </span>
             </div>
-            <div className="sm" style={{ marginTop: 6 }}>
+            <div className="sm" style={{ marginTop: 7, lineHeight: 1.55 }}>
               <b style={{ color: 'var(--g)', textTransform: 'capitalize' }}>{selected.action}</b> — {ACTION_COPY[selected.action]}
             </div>
           </div>
@@ -285,22 +288,22 @@ function QuadrantCard({ q, dishes, selected, onSelect }: any) {
   const meta = QUADRANTS[q];
   return (
     <div className="rz-card" style={{ padding: 14, borderTop: `2px solid ${meta.color}` }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <span style={{ fontWeight: 600, color: meta.color }}>{meta.label}</span>
-        <span className="xs muted">{dishes.length}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 600, color: meta.color }}>
+          <span aria-hidden style={{ width: 8, height: 8, borderRadius: '50%', background: meta.color }} />
+          {meta.label}
+        </span>
+        <span className="rz-pill rz-num" style={{ background: 'var(--s1)', color: 'var(--muted)' }}>{dishes.length}</span>
       </div>
-      <div className="xs muted" style={{ marginBottom: 10 }}>{meta.blurb}</div>
+      <div className="xs muted" style={{ margin: '3px 0 10px' }}>{meta.blurb}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {dishes.length === 0 && <span className="xs muted">No dishes here.</span>}
         {dishes.map((d: any) => {
           const on = selected?.id === d.id;
           return (
-            <button key={d.id} onClick={() => onSelect(d)} style={{
-              fontSize: 12, padding: '6px 11px', borderRadius: 20, cursor: 'pointer',
-              border: `0.5px solid ${on ? 'var(--g)' : 'var(--border)'}`,
-              background: on ? 'var(--g)' : 'var(--surface)',
-              color: on ? '#fff' : 'var(--ink)',
-            }}>{d.name}</button>
+            <button key={d.id} onClick={() => onSelect(d)} aria-pressed={on}
+              className={'rz-chip' + (on ? ' on' : '')}
+              style={{ color: on ? undefined : 'var(--ink)' }}>{d.name}</button>
           );
         })}
       </div>
