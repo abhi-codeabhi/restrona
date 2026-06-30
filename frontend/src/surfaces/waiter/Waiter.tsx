@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  waiterApi, normalizeRequests, normalizeFloor, moveVerb, type Req, type Table,
+  waiterApi, normalizeRequests, normalizeFloor, normalizeServeQueue, moveVerb,
+  type Req, type Table, type ServeTicket,
 } from './api';
 
 /* Waiter handheld — the floor-runner surface. Psychology baked in:
@@ -34,22 +35,25 @@ const STATUS_LABEL: Record<string, string> = {
 const POLL_MS = 7000;
 const AGE_TICK_MS = 1000;
 
-// A unified feed item: a service request, or a "serve" prompt derived from a
-// table that the kitchen has marked ready. The BFF exposes no separate serve
-// feed, so we fuse floor 'ready' tables here.  // TODO: wire to a dedicated /serve feed if the BFF adds one
+// A unified feed item: a service request, or a "serve" prompt for ONE ready
+// ticket (per order). Serve items come from the /serve-queue, keyed by ticketId,
+// so two ready rounds at the same table are two cards and serving one leaves
+// the other.
 type FeedItem = {
   key: string;
   kind: 'request' | 'serve';
   table: number;
   title: string;
+  subtitle?: string;
   icon: string;
   since: number;      // epoch ms the item started waiting
   escalated: boolean; // hard-urgent (unowned / overdue request)
   rank: number;       // higher = more urgent
   req?: Req;
+  ticketId?: string;
 };
 
-function buildFeed(reqs: Req[], tables: Table[]): FeedItem[] {
+function buildFeed(reqs: Req[], serves: ServeTicket[]): FeedItem[] {
   const items: FeedItem[] = [];
   for (const r of reqs) {
     const esc = r.state === 'escalated';
@@ -66,19 +70,19 @@ function buildFeed(reqs: Req[], tables: Table[]): FeedItem[] {
       req: r,
     });
   }
-  for (const t of tables) {
-    if (t.status === 'ready') {
-      items.push({
-        key: 'serve_' + t.n,
-        kind: 'serve',
-        table: t.n,
-        title: 'Food is ready to serve',
-        icon: '🍽️',
-        since: Date.now(), // floor carries no ready-timestamp; age from first sighting handled in component
-        escalated: false,
-        rank: 1500,
-      });
-    }
+  for (const s of serves) {
+    items.push({
+      key: 'serve_' + s.ticketId,
+      kind: 'serve',
+      table: s.table,
+      title: 'Food is ready to serve',
+      subtitle: s.dishes.slice(0, 4).join(', ') + (s.dishes.length > 4 ? '…' : ''),
+      icon: '🍽️',
+      since: s.readyAt,
+      escalated: false,
+      rank: 1500,
+      ticketId: s.ticketId,
+    });
   }
   // most urgent first: rank desc, then oldest first
   return items.sort((a, b) => b.rank - a.rank || a.since - b.since);
@@ -95,6 +99,7 @@ export default function Waiter() {
   const [tab, setTab] = useState<'now' | 'floor'>('now');
   const [reqs, setReqs] = useState<Req[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
+  const [serves, setServes] = useState<ServeTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -103,18 +108,19 @@ export default function Waiter() {
   const [toast, setToast] = useState('');
   const [sheetTable, setSheetTable] = useState<Table | null>(null);
 
-  // remember when a 'serve' table was first seen so its age is stable across polls
-  const serveSeen = useRef<Record<number, number>>({});
-
   function flash(m: string) { setToast(m); window.setTimeout(() => setToast(''), 2400); }
 
   async function refresh(initial = false) {
     if (initial) { setLoading(true); setError(null); }
     try {
-      // Ask the BFF to escalate overdue requests first, then read the fresh state.
+      // Ask the BFF to escalate overdue requests first, then read the fresh state:
+      // open requests, the ready-ticket serve queue, and the derived floor map.
       try { await waiterApi.escalateDue(Date.now()); } catch { /* non-fatal */ }
-      const [rRes, fRes] = await Promise.all([waiterApi.getRequests(), waiterApi.getFloor()]);
+      const [rRes, sRes, fRes] = await Promise.all([
+        waiterApi.getRequests(), waiterApi.getServeQueue(), waiterApi.getFloor(),
+      ]);
       setReqs(normalizeRequests(rRes));
+      setServes(normalizeServeQueue(sRes));
       setTables(normalizeFloor(fRes));
       setError(null);
     } catch (e: any) {
@@ -139,25 +145,10 @@ export default function Waiter() {
   }, []);
 
   const feed = useMemo(() => {
-    const items = buildFeed(reqs, tables);
-    // stabilise serve-item ages using first-seen timestamps
-    for (const it of items) {
-      if (it.kind === 'serve') {
-        if (!serveSeen.current[it.table]) serveSeen.current[it.table] = Date.now();
-        it.since = serveSeen.current[it.table];
-      }
-    }
+    const items = buildFeed(reqs, serves);
     // drop ones currently animating out so the next surfaces visually
     return items.filter((it) => !leaving[it.key]);
-  }, [reqs, tables, leaving]);
-
-  // garbage-collect serve-seen entries for tables no longer ready
-  useEffect(() => {
-    const ready = new Set(tables.filter((t) => t.status === 'ready').map((t) => t.n));
-    for (const k of Object.keys(serveSeen.current)) {
-      if (!ready.has(Number(k))) delete serveSeen.current[Number(k)];
-    }
-  }, [tables]);
+  }, [reqs, serves, leaving]);
 
   async function actOn(it: FeedItem) {
     if (busy[it.key]) return;
@@ -170,12 +161,11 @@ export default function Waiter() {
         // optimistic local removal
         setReqs((rs) => rs.filter((r) => r.id !== it.req!.id));
         flash(`Acknowledged · Table ${it.table}`);
-      } else {
-        // Mark the table served on the server (ready -> seated) so the prompt
-        // clears for good instead of reappearing on the next poll.
-        await waiterApi.serveTable(it.table);
-        delete serveSeen.current[it.table];
-        setTables((ts) => ts.map((t) => (t.n === it.table && t.status === 'ready' ? { ...t, status: 'seated' } : t)));
+      } else if (it.ticketId) {
+        // Deliver THIS ticket (one order). Other rounds at the same table are
+        // separate cards and stay until they're each served.
+        await waiterApi.serveTicket(it.ticketId);
+        setServes((ss) => ss.filter((s) => s.ticketId !== it.ticketId));
         flash(`Served · Table ${it.table}`);
       }
       // reconcile with server shortly after
@@ -332,6 +322,7 @@ function FeedCard({ it, top, now, busy, onAct }: { it: FeedItem; top: boolean; n
           {top && !it.escalated && <span className="rz-pill" style={{ background: 'var(--g)', color: '#fff', fontWeight: 600 }}>Next</span>}
         </div>
         <div className="sm" style={{ marginTop: 2 }}>{it.title}</div>
+        {it.subtitle && <div className="xs" style={{ marginTop: 2, fontWeight: 600 }}>{it.subtitle}</div>}
         <div className="xs muted" style={{ marginTop: 3, color: it.escalated ? 'var(--red)' : 'var(--muted)' }}>
           waiting {ageLabel(it.since, now)}
         </div>

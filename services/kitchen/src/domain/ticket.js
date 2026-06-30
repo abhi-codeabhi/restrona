@@ -22,8 +22,23 @@ export function createTicketFromOrder({ orderId, table, items, id = newId('tkt')
     orderId,
     table,
     items: ticketItems,
+    served: false, // set true once the waiter delivers this ticket to the table
     createdAt: clock.now().toISOString(),
   };
+}
+
+// Mark a ticket as served (delivered to the table). Immutable update.
+export function markServed(ticket) {
+  return { ...ticket, served: true };
+}
+
+// Lifecycle phase of a whole ticket, used to route it to the right surface:
+//   'cooking' — still being made (shows on the kitchen board)
+//   'ready'   — all items ready, not yet delivered (shows on the waiter serve queue)
+//   'served'  — delivered (off both)
+export function ticketPhase(ticket) {
+  if (ticket.served) return 'served';
+  return isAllReady(ticket) ? 'ready' : 'cooking';
 }
 
 // Cycle a single item new -> preparing -> ready, capped at 'ready'.

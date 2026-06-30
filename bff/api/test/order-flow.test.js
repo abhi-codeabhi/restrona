@@ -1,34 +1,40 @@
-// End-to-end saga test: prove an order travels across surfaces in ONE shared API.
-// customer places order -> kitchen board shows a ticket -> floor table is 'cooking'
-// -> kitchen bumps the ticket -> floor goes 'ready' -> a bill is opened.
-// Runs entirely in-memory (no network, no Postgres) via the use cases the HTTP
-// routes call, so it isolates the saga wiring from transport.
+// End-to-end saga tests over the ONE shared API. Customer order -> kitchen ticket
+// -> waiter serve queue -> billing. Floor status is DERIVED per table from its
+// tickets + open bill (a table runs several orders at once), and serving is
+// PER-TICKET (per order). Runs in-memory via the same use cases the HTTP routes
+// call, so it isolates the wiring from transport.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApiApp, seedDemoData } from '../src/build.js';
 import { openTableBill } from '../../../services/orchestration/src/tableBill.js';
+import { buildFloorView } from '../../../services/orchestration/src/floorView.js';
 
 const TENANT = { tenantId: 'acme', tier: 'T1_POOLED', region: 'ap-mumbai-1' };
 
-// The HTTP layer relays the outbox after each command; replicate that here so the
-// saga fires exactly as it would in the running server.
 async function drain(outbox, bus) {
   let n; do { n = await outbox.relayTo(bus); } while (n > 0);
 }
 
-test('order placed by customer flows to kitchen, floor and billing', async () => {
+// Mirror the API's GET /floor read-model: stored floor + live tickets + open bills.
+async function floorView(uc) {
+  const fr = (await uc.floor.getFloor(TENANT)).value;
+  const cooking = (await uc.kitchen.getBoard(TENANT)).value || [];
+  const ready = (await uc.kitchen.readyQueue(TENANT)).value || [];
+  const bills = (await uc.billing.listOpen(TENANT)).value || [];
+  return buildFloorView(fr, [...cooking, ...ready], bills);
+}
+const statusOf = (view, n) => view.tables.find((t) => t.n === n)?.status;
+
+test('order -> kitchen -> serve queue -> serve; floor status derived throughout', async () => {
   const app = buildApiApp();
   await seedDemoData(app.useCases, 'acme');
   const { useCases: uc, outbox, bus } = app;
-  await drain(outbox, bus); // flush seed events
+  await drain(outbox, bus);
 
-  // Look up two real menu items to order.
   const menu = (await uc.catalog.getMenu(TENANT)).value;
   const butter = menu.find((i) => i.name === 'Butter Chicken');
   const naan = menu.find((i) => i.name === 'Garlic Naan');
-  assert.ok(butter && naan, 'seeded menu present');
 
-  // 1) Customer places an order at table 5.
   const placed = await uc.ordering.placeOrder(TENANT, {
     tableId: 'T5',
     items: [
@@ -36,113 +42,144 @@ test('order placed by customer flows to kitchen, floor and billing', async () =>
       { menuItemId: naan.id, unitPriceMinor: naan.price.minor, qty: 2 },
     ],
   });
-  assert.ok(placed.ok, 'order placed');
+  assert.ok(placed.ok);
   const orderId = placed.value.order.id;
-  await drain(outbox, bus); // saga: OrderPlaced -> kitchen ticket + floor cooking
+  await drain(outbox, bus);
 
-  // 2) Kitchen board now has a ticket for this order with 3 item-units.
-  const board = (await uc.kitchen.getBoard(TENANT)).value;
-  const ticket = board.find((t) => t.orderId === orderId);
-  assert.ok(ticket, 'kitchen ticket created by saga');
-  assert.equal(ticket.items.length, 3, '1 butter + 2 naan = 3 units');
-  assert.equal(ticket.table, 'T5');
+  // Kitchen board has the cooking ticket; floor derives 'cooking'.
+  const ticket = (await uc.kitchen.getBoard(TENANT)).value.find((t) => t.orderId === orderId);
+  assert.ok(ticket, 'kitchen ticket created');
+  assert.equal(ticket.items.length, 3);
+  assert.equal(statusOf(await floorView(uc), 5), 'cooking');
 
-  // 3) Floor: table 5 is seated + cooking, carrying this order.
-  const floor1 = (await uc.floor.getFloor(TENANT)).value;
-  const t5 = floor1.tables.find((t) => t.n === 5);
-  assert.equal(t5.status, 'cooking', 'waiter floor shows table cooking');
-  assert.equal(t5.order, orderId);
+  // Bump -> ticket ready: leaves the cook board, enters the serve queue; floor 'ready'.
+  await uc.kitchen.markAllReady(TENANT, { ticketId: ticket.id });
+  await drain(outbox, bus);
+  assert.ok(!(await uc.kitchen.getBoard(TENANT)).value.find((t) => t.id === ticket.id), 'off cook board');
+  assert.ok((await uc.kitchen.readyQueue(TENANT)).value.find((t) => t.id === ticket.id), 'in serve queue');
+  assert.equal(statusOf(await floorView(uc), 5), 'ready');
 
-  // 4) Kitchen bumps the whole ticket to ready.
-  const bumped = await uc.kitchen.markAllReady(TENANT, { ticketId: ticket.id });
-  assert.ok(bumped.ok);
-  await drain(outbox, bus); // saga: TicketReady -> floor ready (NO bill yet)
-
-  // 5) Floor: table 5 now 'ready' (waiter's serve feed).
-  const floor2 = (await uc.floor.getFloor(TENANT)).value;
-  assert.equal(floor2.tables.find((t) => t.n === 5).status, 'ready', 'table ready to serve');
-
-  // 5b) Kitchen: a bumped ticket leaves the active board (it's done cooking).
-  const boardAfter = (await uc.kitchen.getBoard(TENANT)).value;
-  assert.ok(!boardAfter.find((t) => t.id === ticket.id), 'bumped ticket cleared from the board');
-
-  // 6) Waiter serves the ready table: it returns to 'seated' so the serve prompt
-  // clears server-side and won't reappear on the next poll.
-  await uc.floor.setTableStatus(TENANT, { n: 5, status: 'seated' });
-  const floor3 = (await uc.floor.getFloor(TENANT)).value;
-  assert.equal(floor3.tables.find((t) => t.n === 5).status, 'seated', 'served table no longer ready');
-
-  // 7) Dine-in: the guest has NOT paid and NO bill exists yet.
+  // Waiter serves THIS ticket -> leaves the queue; floor back to 'seated'.
+  await uc.kitchen.serveTicket(TENANT, { ticketId: ticket.id });
+  await drain(outbox, bus);
+  assert.equal((await uc.kitchen.readyQueue(TENANT)).value.length, 0, 'serve queue empty');
+  assert.equal(statusOf(await floorView(uc), 5), 'seated');
   assert.equal((await uc.billing.listOpen(TENANT)).value.length, 0, 'no bill until requested');
 });
 
-test('table accumulates multiple orders; one final bill is generated on request', async () => {
+test('multi-order table: serving the first order does NOT serve the second', async () => {
   const app = buildApiApp();
   await seedDemoData(app.useCases, 'acme');
   const { useCases: uc, outbox, bus } = app;
   await drain(outbox, bus);
 
   const menu = (await uc.catalog.getMenu(TENANT)).value;
-  const butter = menu.find((i) => i.name === 'Butter Chicken');
-  const naan = menu.find((i) => i.name === 'Garlic Naan');
-  const lassi = menu.find((i) => i.name === 'Mango Lassi');
+  const pick = (n) => menu.find((i) => i.name === n);
+  const butter = pick('Butter Chicken'), naan = pick('Garlic Naan'), lassi = pick('Mango Lassi'), biryani = pick('Veg Biryani');
 
-  // First round of ordering at table 8.
+  // Round 1: one dish at table 6.
   const o1 = await uc.ordering.placeOrder(TENANT, {
-    tableId: 'T8', items: [{ menuItemId: butter.id, unitPriceMinor: butter.price.minor, qty: 1 }],
+    tableId: 'T6', items: [{ menuItemId: butter.id, unitPriceMinor: butter.price.minor, qty: 1 }],
   });
   await drain(outbox, bus);
-  // Later in the meal, the same table orders again.
+  // Some time later, round 2: three dishes at the same table.
   const o2 = await uc.ordering.placeOrder(TENANT, {
-    tableId: 'T8', items: [
-      { menuItemId: naan.id, unitPriceMinor: naan.price.minor, qty: 2 },
+    tableId: 'T6', items: [
+      { menuItemId: naan.id, unitPriceMinor: naan.price.minor, qty: 1 },
       { menuItemId: lassi.id, unitPriceMinor: lassi.price.minor, qty: 1 },
+      { menuItemId: biryani.id, unitPriceMinor: biryani.price.minor, qty: 1 },
     ],
   });
   await drain(outbox, bus);
-  assert.ok(o1.ok && o2.ok);
 
-  // No bill yet — the guest is still dining.
+  const t1 = (await uc.kitchen.getBoard(TENANT)).value.find((t) => t.orderId === o1.value.order.id);
+  const t2 = (await uc.kitchen.getBoard(TENANT)).value.find((t) => t.orderId === o2.value.order.id);
+  assert.ok(t1 && t2, 'both tickets cooking');
+
+  // Order 1: mark preparing then ready (item by item), order 2 left cooking.
+  await uc.kitchen.advanceItem(TENANT, { ticketId: t1.id, itemIndex: 0 }); // -> preparing
+  await uc.kitchen.advanceItem(TENANT, { ticketId: t1.id, itemIndex: 0 }); // -> ready (all ready)
+  await drain(outbox, bus);
+
+  // Serve queue holds ONLY order 1; order 2 still on the cook board.
+  let queue = (await uc.kitchen.readyQueue(TENANT)).value;
+  assert.equal(queue.length, 1, 'only order 1 ready');
+  assert.equal(queue[0].id, t1.id);
+  assert.ok((await uc.kitchen.getBoard(TENANT)).value.find((t) => t.id === t2.id), 'order 2 still cooking');
+  assert.equal(statusOf(await floorView(uc), 6), 'ready'); // table has a ready ticket
+
+  // Serve order 1.
+  await uc.kitchen.serveTicket(TENANT, { ticketId: t1.id });
+  await drain(outbox, bus);
+
+  // THE KEY ASSERTION: order 2 was NOT served and is still cooking.
+  const t2After = (await uc.kitchen.getBoard(TENANT)).value.find((t) => t.id === t2.id);
+  assert.ok(t2After, 'order 2 still on the cook board after serving order 1');
+  assert.equal(t2After.served, false, 'order 2 not served');
+  assert.equal((await uc.kitchen.readyQueue(TENANT)).value.length, 0, 'nothing left ready (order 2 still cooking)');
+  assert.equal(statusOf(await floorView(uc), 6), 'cooking'); // back to cooking — order 2 still going
+
+  // Finish order 2 and serve it too.
+  await uc.kitchen.markAllReady(TENANT, { ticketId: t2.id });
+  await drain(outbox, bus);
+  assert.equal((await uc.kitchen.readyQueue(TENANT)).value.length, 1, 'order 2 now ready');
+  await uc.kitchen.serveTicket(TENANT, { ticketId: t2.id });
+  await drain(outbox, bus);
+  assert.equal(statusOf(await floorView(uc), 6), 'seated', 'all served -> seated');
+
+  // Then the guest asks for the bill: ONE bill aggregates BOTH orders (4 dishes).
+  const billed = await openTableBill({ useCases: uc, tenant: TENANT, table: 'T6' });
+  assert.ok(billed.ok);
+  assert.equal(billed.value.orderCount, 2);
+  assert.equal(billed.value.bill.lines.length, 4, '1 + 3 dishes');
+  assert.equal(statusOf(await floorView(uc), 6), 'billing', 'open bill -> billing');
+});
+
+test('table accumulates multiple orders; one final categorized bill on request', async () => {
+  const app = buildApiApp();
+  await seedDemoData(app.useCases, 'acme');
+  const { useCases: uc, outbox, bus } = app;
+  await drain(outbox, bus);
+
+  const menu = (await uc.catalog.getMenu(TENANT)).value;
+  const pick = (n) => menu.find((i) => i.name === n);
+  const butter = pick('Butter Chicken'), naan = pick('Garlic Naan'), lassi = pick('Mango Lassi');
+
+  await uc.ordering.placeOrder(TENANT, { tableId: 'T8', items: [{ menuItemId: butter.id, unitPriceMinor: butter.price.minor, qty: 1 }] });
+  await drain(outbox, bus);
+  await uc.ordering.placeOrder(TENANT, { tableId: 'T8', items: [
+    { menuItemId: naan.id, unitPriceMinor: naan.price.minor, qty: 2 },
+    { menuItemId: lassi.id, unitPriceMinor: lassi.price.minor, qty: 1 },
+  ] });
+  await drain(outbox, bus);
+
   assert.equal((await uc.billing.listOpen(TENANT)).value.length, 0);
 
-  // Waiter/billing agent asks for the bill: ONE bill aggregates both orders.
   const billed = await openTableBill({ useCases: uc, tenant: TENANT, table: 'T8' });
-  assert.ok(billed.ok, 'final bill generated');
-  assert.equal(billed.value.orderCount, 2, 'aggregated both orders');
-  assert.equal(billed.value.bill.lines.length, 4, '1 butter + 2 naan + 1 lassi = 4 units');
-  // Dish names resolved (not raw menuItemIds).
+  assert.ok(billed.ok);
+  assert.equal(billed.value.orderCount, 2);
+  assert.equal(billed.value.bill.lines.length, 4);
   assert.ok(billed.value.bill.lines.some((l) => l.name === 'Butter Chicken'), 'names resolved');
-  // Each line carries its menu category, and the bill is grouped into sections.
-  assert.ok(billed.value.bill.lines.every((l) => l.category && l.category !== 'Other'), 'every line has a category');
-  const cats = billed.value.sections.map((s) => s.category);
-  assert.deepEqual(cats, ['Mains', 'Breads', 'Drinks'], 'sections grouped in menu order');
-  const mains = billed.value.sections.find((s) => s.category === 'Mains');
-  assert.equal(mains.subtotalMinor, 34000, 'Mains section subtotal = Butter Chicken');
-  // Floor moved to billing.
-  assert.equal((await uc.floor.getFloor(TENANT)).value.tables.find((t) => t.n === 8).status, 'billing');
+  assert.ok(billed.value.bill.lines.every((l) => l.category && l.category !== 'Other'), 'every line categorized');
+  assert.deepEqual(billed.value.sections.map((s) => s.category), ['Mains', 'Breads', 'Drinks']);
+  assert.equal(billed.value.sections.find((s) => s.category === 'Mains').subtotalMinor, 34000);
 
-  // Asking again does not double-bill (orders are marked billed).
   const again = await openTableBill({ useCases: uc, tenant: TENANT, table: 'T8' });
   assert.ok(!again.ok, 'no open orders left to bill');
   assert.equal((await uc.billing.listOpen(TENANT)).value.length, 1, 'still exactly one bill');
 });
 
-test('order with an unknown table still reaches the kitchen (floor best-effort)', async () => {
+test('order with an unknown (non-numeric) table still reaches the kitchen', async () => {
   const app = buildApiApp();
   await seedDemoData(app.useCases, 'acme');
   const { useCases: uc, outbox, bus } = app;
   await drain(outbox, bus);
 
-  const menu = (await uc.catalog.getMenu(TENANT)).value;
-  const lassi = menu.find((i) => i.name === 'Mango Lassi');
-
+  const lassi = (await uc.catalog.getMenu(TENANT)).value.find((i) => i.name === 'Mango Lassi');
   const placed = await uc.ordering.placeOrder(TENANT, {
-    tableId: 'PATIO', // no numeric table -> floor seat skipped, kitchen still fires
-    items: [{ menuItemId: lassi.id, unitPriceMinor: lassi.price.minor, qty: 1 }],
+    tableId: 'PATIO', items: [{ menuItemId: lassi.id, unitPriceMinor: lassi.price.minor, qty: 1 }],
   });
   assert.ok(placed.ok);
   await drain(outbox, bus);
-
-  const board = (await uc.kitchen.getBoard(TENANT)).value;
-  assert.ok(board.find((t) => t.orderId === placed.value.order.id), 'ticket fired even without a numeric table');
+  assert.ok((await uc.kitchen.getBoard(TENANT)).value.find((t) => t.orderId === placed.value.order.id));
 });

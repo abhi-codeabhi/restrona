@@ -9,6 +9,7 @@ import http from 'node:http';
 import { AppError, UnauthorizedError } from '#core';
 import { withTenant, resolveTenantFromHeaders } from '#tenancy';
 import { openTableBill } from '../../../services/orchestration/src/tableBill.js';
+import { buildFloorView } from '../../../services/orchestration/src/floorView.js';
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -106,7 +107,28 @@ async function route(req, res, path, url, tenant, uc) {
   }
 
   /* ───────────────────────── Waiter ───────────────────────── */
-  if (m === 'GET' && path === '/floor') return await uc.floor.getFloor(tenant);
+  // Floor map with LIVE per-table status derived from each table's tickets +
+  // open bill (a table runs several orders at once, so status can't be a single
+  // stored value).
+  if (m === 'GET' && path === '/floor') {
+    const fr = await uc.floor.getFloor(tenant);
+    if (!fr.ok) return fr;
+    const cooking = (await uc.kitchen.getBoard(tenant)).value || [];
+    const ready = (await uc.kitchen.readyQueue(tenant)).value || [];
+    const openBills = (await uc.billing.listOpen(tenant)).value || [];
+    return { ok: true, value: buildFloorView(fr.value, [...cooking, ...ready], openBills) };
+  }
+  // The waiter serve queue: ready, not-yet-delivered tickets — ONE per order, so
+  // each round is served independently of the others at the same table.
+  if (m === 'GET' && path === '/serve-queue') {
+    const r = await uc.kitchen.readyQueue(tenant);
+    if (!r.ok) return r;
+    return { ok: true, value: r.value.map((t) => ({
+      ticketId: t.id, orderId: t.orderId, table: t.table,
+      items: t.items.map((i) => ({ name: i.name, station: i.station })),
+      readyAt: t.createdAt,
+    })) };
+  }
   if (m === 'POST' && path === '/tables/assign') {
     const body = (await readBody(req)) ?? {};
     return await uc.floor.assignWaiter(tenant, { n: body.n, waiterId: body.waiterId });
@@ -114,12 +136,6 @@ async function route(req, res, path, url, tenant, uc) {
   if (m === 'POST' && path === '/tables/move') {
     const body = (await readBody(req)) ?? {};
     return await uc.floor.moveTable(tenant, { srcN: body.srcN, dstN: body.dstN });
-  }
-  // Waiter serves a ready table: food delivered, table goes back to dining
-  // ('seated') so the serve prompt clears server-side and doesn't reappear.
-  if (m === 'POST' && path === '/tables/serve') {
-    const body = (await readBody(req)) ?? {};
-    return await uc.floor.setTableStatus(tenant, { n: body.n, status: 'seated' });
   }
   if (m === 'GET' && path === '/requests') return await uc.serviceRequests.listOpen(tenant);
   if (m === 'POST' && path === '/requests/escalate') {
@@ -149,6 +165,10 @@ async function route(req, res, path, url, tenant, uc) {
   }
   if (m === 'POST' && (mt = path.match(/^\/tickets\/([^/]+)\/bump$/))) {
     return await uc.kitchen.markAllReady(tenant, { ticketId: mt[1] });
+  }
+  // Waiter delivers ONE ready ticket (per order, not per table).
+  if (m === 'POST' && (mt = path.match(/^\/tickets\/([^/]+)\/serve$/))) {
+    return await uc.kitchen.serveTicket(tenant, { ticketId: mt[1] });
   }
   if (m === 'POST' && path === '/menu/86') {
     const body = (await readBody(req)) ?? {};

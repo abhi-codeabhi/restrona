@@ -75,12 +75,15 @@ export function registerOrderFlowSaga({ bus, useCases, logger }) {
         if (!rk.ok) log.warn('saga.kitchen.receiveTicket.failed', { orderId, error: rk.error?.message });
       }
 
-      // Seat the table and mark it cooking so the waiter floor reflects it.
+      // Seat the table (occupied + holds this order). The LIVE status
+      // (cooking/ready/billing) is derived per-table from its tickets + bill in
+      // the floor read-model — never a single stored value, because a table runs
+      // several orders at once.
       const n = tableNumber(tableId);
       if (n != null && floor?.ensureTable) {
         await floor.ensureTable(tenant, { n });
-        const rf = await floor.setTableStatus(tenant, { n, status: 'cooking', order: orderId });
-        if (!rf.ok) log.warn('saga.floor.cooking.failed', { n, error: rf.error?.message });
+        const rf = await floor.seatTable(tenant, { n, order: orderId });
+        if (!rf.ok) log.warn('saga.floor.seat.failed', { n, error: rf.error?.message });
       }
       log.info('saga.orderPlaced.handled', { orderId, table: tableId, units: items.length });
     } catch (e) {
@@ -88,21 +91,9 @@ export function registerOrderFlowSaga({ bus, useCases, logger }) {
     }
   });
 
-  // ── TicketReady ▶ floor 'ready' (waiter's serve feed) ───────────────────────
-  const offReady = bus.subscribe(KITCHEN_TICKET_READY, async (evt) => {
-    const tenant = tenantOf(evt);
-    const { orderId, table } = evt.payload || {};
-    try {
-      const n = tableNumber(table);
-      if (n != null && floor?.setTableStatus) {
-        const rf = await floor.setTableStatus(tenant, { n, status: 'ready' });
-        if (!rf.ok) log.warn('saga.floor.ready.failed', { n, error: rf.error?.message });
-      }
-      log.info('saga.ticketReady.handled', { orderId, table });
-    } catch (e) {
-      log.error('saga.ticketReady.error', { orderId, error: e?.message });
-    }
-  });
+  // TicketReady no longer writes floor status — the waiter serve queue is the set
+  // of ready, unserved tickets (per order), and the floor map derives its status.
+  // The event is still emitted for analytics/future consumers.
 
-  return () => { offPlaced(); offReady(); };
+  return () => { offPlaced(); };
 }

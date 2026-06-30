@@ -6,6 +6,8 @@ import {
   advanceItem as advanceItemDomain,
   bumpAll,
   isAllReady,
+  markServed,
+  ticketPhase,
   allDayCounts,
   oldestFirst,
 } from '../domain/ticket.js';
@@ -14,6 +16,7 @@ import {
 export const EVENTS = {
   TicketFired: 'kitchen.ticket.fired',
   TicketReady: 'kitchen.ticket.ready',
+  TicketServed: 'kitchen.ticket.served',
 };
 
 // Event envelope helper (matches the outbox `add(evt)` shape).
@@ -93,12 +96,32 @@ export function makeKitchenUseCases({ tickets, outbox, clock }) {
       return ok(updated);
     },
 
-    // The active board: tickets the kitchen is still working, oldest first.
-    // Fully-ready (bumped) tickets have left the kitchen, so they're excluded —
-    // the board stays focused on what's actually cooking instead of piling up.
+    // Waiter delivers ONE ready ticket to the table. Marks just that ticket
+    // served — other tickets for the same table (still cooking, or another ready
+    // round) are untouched. This is why serving order #1 never serves order #2.
+    async serveTicket(tenant, { ticketId }) {
+      const existing = await tickets.findById(tenant, ticketId);
+      if (!existing) return err(new NotFoundError(`Ticket ${ticketId} not found`));
+      const updated = markServed(existing);
+      await tickets.save(tenant, updated);
+      outbox.add(evt(EVENTS.TicketServed, tenant.tenantId, {
+        ticketId: updated.id, orderId: updated.orderId, table: updated.table,
+      }));
+      return ok(updated);
+    },
+
+    // The active KITCHEN board: tickets still being cooked, oldest first.
+    // Ready (bumped) and served tickets have left the cook's screen.
     async getBoard(tenant) {
       const all = await tickets.list(tenant);
-      return ok(oldestFirst(all.filter((t) => !isAllReady(t))));
+      return ok(oldestFirst(all.filter((t) => ticketPhase(t) === 'cooking')));
+    },
+
+    // The WAITER serve queue: tickets that are all-ready but not yet delivered.
+    // One entry per order, so each round is served independently.
+    async readyQueue(tenant) {
+      const all = await tickets.list(tenant);
+      return ok(oldestFirst(all.filter((t) => ticketPhase(t) === 'ready')));
     },
 
     // The all-day rail: counts of not-yet-ready items across the board.

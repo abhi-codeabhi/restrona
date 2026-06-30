@@ -63,11 +63,8 @@ export async function openTableBill({ useCases, tenant, table }) {
   // Mark each contributing order billed so a second "ask for bill" won't re-bill.
   for (const o of orders) await ordering.markBilled(tenant, o.id);
 
-  // Move the table into 'billing' on the floor.
-  const n = tableNumber(table);
-  if (n != null && floor?.setTableStatus) {
-    await floor.setTableStatus(tenant, { n, status: 'billing' });
-  }
+  // The table shows 'billing' on the floor automatically — the floor view derives
+  // it from the now-open bill, so there's no status to set here.
 
   return ok({ ...rb.value, orderCount: orders.length, sections: groupByCategory(rb.value.bill) });
 }

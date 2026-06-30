@@ -19,9 +19,10 @@ export const waiterApi = {
   moveTable: (srcN: number, dstN: number) => c.post('/tables/move', { srcN, dstN }),
   // POST /tables/assign { n, waiterId } -> floor
   assignWaiter: (n: number, waiterId: string) => c.post('/tables/assign', { n, waiterId }),
-  // POST /tables/serve { n } -> floor (ready -> seated). Marks a ready table served
-  // server-side so the serve prompt clears and doesn't return on the next poll.
-  serveTable: (n: number) => c.post('/tables/serve', { n }),
+  // GET /serve-queue -> ready, not-yet-delivered tickets (ONE per order).
+  getServeQueue: () => c.get('/serve-queue'),
+  // POST /tickets/:id/serve -> marks just that ticket served (per order, not table).
+  serveTicket: (ticketId: string) => c.post('/tickets/' + encodeURIComponent(ticketId) + '/serve'),
 };
 
 // ---- Normalizers: BFF responses wrap differently (use-case ok() values surface
@@ -72,4 +73,27 @@ export function normalizeFloor(res: any): Table[] {
 
 export function moveVerb(res: any): 'moved' | 'swapped' {
   return res?.verb === 'swapped' ? 'swapped' : 'moved';
+}
+
+// A ready ticket awaiting delivery — ONE per order, so two rounds at the same
+// table are two separate serve cards and serving one leaves the other.
+export type ServeTicket = {
+  ticketId: string;
+  table: number;
+  orderId?: string;
+  dishes: string[];
+  readyAt: number;
+};
+
+export function normalizeServeQueue(res: any): ServeTicket[] {
+  const raw = Array.isArray(res) ? res : res?.value ?? res?.tickets ?? [];
+  return (raw || [])
+    .map((t: any) => ({
+      ticketId: (t.ticketId ?? t.id)?.toString(),
+      table: Number(String(t.table ?? '').replace(/\D/g, '')) || 0,
+      orderId: t.orderId,
+      dishes: (t.items ?? []).map((i: any) => i.name ?? i).filter(Boolean),
+      readyAt: t.readyAt ? Date.parse(t.readyAt) || Date.now() : Date.now(),
+    }))
+    .filter((t: ServeTicket) => t.ticketId);
 }
