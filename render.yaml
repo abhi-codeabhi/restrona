@@ -1,19 +1,19 @@
 # Render Blueprint — deploys the Restorna BFFs as Docker web services.
-# Each service runs the same image; the APP env var selects which BFF it serves.
-# Render injects PORT automatically; bin/serve.js reads it. Docs: https://render.com/docs/blueprint-spec
+# Same image; APP selects the BFF. Render injects PORT (bin/serve.js reads it).
+# Set ALLOWED_ORIGIN to your Vercel URL so the browser front-end can call these.
+# Set DATABASE_URL (Supabase pooler) on restorna-ordering for persistence.
 services:
   - type: web
     name: restorna-customer
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free                 # upgrade to "starter" to avoid free-tier spin-down
+    plan: free
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
-      - key: APP
-        value: customer
-      - key: DATABASE_URL      # set in the Render dashboard (Supabase pooler URL) for persistence
-        sync: false
+      - { key: APP, value: customer }
+      - { key: ALLOWED_ORIGIN, sync: false }
+      - { key: DATABASE_URL, sync: false }
 
   - type: web
     name: restorna-waiter
@@ -23,10 +23,8 @@ services:
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
-      - key: APP
-        value: waiter
-      - key: DATABASE_URL
-        sync: false
+      - { key: APP, value: waiter }
+      - { key: ALLOWED_ORIGIN, sync: false }
 
   - type: web
     name: restorna-kitchen
@@ -36,10 +34,8 @@ services:
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
-      - key: APP
-        value: kitchen
-      - key: DATABASE_URL
-        sync: false
+      - { key: APP, value: kitchen }
+      - { key: ALLOWED_ORIGIN, sync: false }
 
   - type: web
     name: restorna-billing
@@ -49,7 +45,37 @@ services:
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
-      - key: APP
-        value: billing
-      - key: DATABASE_URL
-        sync: false
+      - { key: APP, value: billing }
+      - { key: ALLOWED_ORIGIN, sync: false }
+
+  - type: web
+    name: restorna-owner
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - { key: APP, value: owner }
+      - { key: ALLOWED_ORIGIN, sync: false }
+
+  # Front-end as a Render Static Site (no Vercel needed). Builds the Vite app and
+  # serves dist/ from a CDN, with SPA rewrite. Set the VITE_*_API vars (build-time)
+  # to the BFF URLs above in the dashboard, then set each BFF's ALLOWED_ORIGIN to
+  # this site's URL.
+  - type: web
+    name: restorna-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+    envVars:
+      - { key: VITE_CUSTOMER_API, sync: false }
+      - { key: VITE_WAITER_API, sync: false }
+      - { key: VITE_KITCHEN_API, sync: false }
+      - { key: VITE_BILLING_API, sync: false }
+      - { key: VITE_OWNER_API, sync: false }
+      - { key: VITE_TENANT_ID, value: acme }
+    routes:
+      - { type: rewrite, source: /*, destination: /index.html }
