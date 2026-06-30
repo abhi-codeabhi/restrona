@@ -15,5 +15,8 @@
     "start": "node services/ordering/src/main.js",
     "demo": "node scripts/demo.js"
   },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
   "engines": { "node": ">=20" }
 }

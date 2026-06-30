@@ -51,38 +51,26 @@ gh repo create restorna --private --source=. --remote=origin --push
    Copy the URI and insert your password. This pooler URL is the one to use on Render/serverless;
    prepared statements are disabled on it (the adapter is written accordingly).
 
-### 2b. Wire the Postgres adapter (small code change)
-The repo ships in-memory adapters by default and a ready Postgres adapter
-(`services/ordering/src/adapters/postgresRepos.js`). To use it:
+### 2b. The Postgres adapter is already wired — just provide DATABASE_URL
+This is done in the code now (you don't edit anything):
+- `package.json` declares the `pg` dependency; the `Dockerfile` runs `npm install --omit=dev`.
+- `services/ordering/src/main.js` exposes `buildAppFromEnv()`: if `DATABASE_URL` is set it builds a
+  `pg` Pool and uses `PostgresOrderRepository`/`PostgresSessionRepository`; otherwise it stays
+  in-memory. `bin/serve.js` already calls `buildAppFromEnv()` for the ordering app.
+- The `pg` import is dynamic, so the in-memory path and the test suite never load it.
 
-1. Add the Postgres driver. Create/extend `package.json` dependencies and the Dockerfile to install:
-   ```jsonc
-   // package.json
-   "dependencies": { "pg": "^8.13.0" }
-   ```
-   ```dockerfile
-   # in Dockerfile, before copying source (or after, then `npm install --omit=dev`)
-   RUN npm install --omit=dev
-   ```
-2. Make the ordering composition root pick the adapter from env (so in-memory stays the default and
-   tests keep passing). In `services/ordering/src/main.js`:
-   ```js
-   import { InMemoryOrderRepository } from './adapters/repos.js';
-   let orders;
-   if (process.env.DATABASE_URL) {
-     const { PostgresOrderRepository } = await import('./adapters/postgresRepos.js');
-     orders = new PostgresOrderRepository(process.env.DATABASE_URL);
-   } else {
-     orders = new InMemoryOrderRepository();
-   }
-   ```
-   (Make `buildApp` async if it isn't already, or construct `orders` before calling it.)
-3. **Verify locally against the real DB before trusting it** — this adapter has not been run yet:
-   ```bash
-   npm install
-   DATABASE_URL="<your-supabase-pooler-uri>" node -e "import('./services/ordering/src/adapters/postgresRepos.js').then(console.log)"
-   # then run the ordering flow and confirm rows land in Supabase
-   ```
+**Verify locally against the real DB once before trusting persistence** (this adapter has not yet
+been executed against a database):
+```bash
+npm install                                  # installs pg
+DATABASE_URL="<your-supabase-pooler-uri>" PORT=3001 APP=ordering node bin/serve.js
+# in another shell:
+curl -s -X POST localhost:3001/orders -H 'content-type: application/json' -H 'x-tenant-id: <a-uuid>' \
+  -d '{"tableId":"T12","items":[{"menuItemId":"paneer","unitPriceMinor":24000,"qty":1}]}'
+# then confirm the row appears in Supabase → Table editor → orders
+```
+Note: tenant IDs must be UUIDs (the RLS column is `uuid`); use a real tenant UUID in `x-tenant-id`.
+The other services/BFFs remain in-memory until their own Postgres adapters are added (same pattern).
 
 ### 2c. Tell Render about the database
 1. In the Render dashboard, open each service → **Environment** → set `DATABASE_URL` to the Supabase

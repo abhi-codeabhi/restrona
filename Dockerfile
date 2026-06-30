@@ -5,12 +5,13 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Copy the whole repo (no deps to install). .dockerignore trims the cruft.
+# Copy the whole repo. .dockerignore trims the cruft.
 COPY . .
 
-# Run as a non-root user for security. node:20-alpine ships an unprivileged
-# "node" user (uid 1000) we can reuse.
-RUN chown -R node:node /app
+# Install runtime deps (only `pg`, used when DATABASE_URL is set). The app is
+# otherwise dependency-free, so this is tiny. Then drop to the unprivileged
+# "node" user (uid 1000) that node:20-alpine ships.
+RUN npm install --omit=dev --no-audit --no-fund && chown -R node:node /app
 USER node
 
 # Defaults; override APP per service at deploy time.

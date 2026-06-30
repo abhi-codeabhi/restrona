@@ -32,8 +32,8 @@ const APPS = {
   },
   ordering: {
     module: '../services/ordering/src/main.js',
-    // Ordering has no seeded builder; buildApp() returns a ready (non-listening) server.
-    build: (m) => m.buildApp(),
+    // Env-aware: in-memory by default, Postgres/Supabase when DATABASE_URL is set.
+    build: (m) => m.buildAppFromEnv(),
   },
 };
 
