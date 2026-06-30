@@ -10,12 +10,19 @@ export const TENANT: string = (import.meta as any).env?.VITE_TENANT_ID || 'acme'
 const env = (import.meta as any).env || {};
 const API: string = env.VITE_API_URL || 'http://localhost:8080';
 
+// VITE_API_URL is the single source of truth: when it's set, EVERY surface uses
+// it and the legacy per-surface VITE_*_API vars are ignored. This prevents a
+// stale VITE_CUSTOMER_API (etc.) from silently routing a surface back to an old,
+// isolated service. Only when VITE_API_URL is unset do the per-surface overrides
+// (or localhost) apply — useful if you ever split the backend again.
+const surface = (perSurface?: string) => (env.VITE_API_URL ? API : (perSurface || API));
+
 export const BASES = {
-  customer: env.VITE_CUSTOMER_API || API,
-  waiter: env.VITE_WAITER_API || API,
-  kitchen: env.VITE_KITCHEN_API || API,
-  billing: env.VITE_BILLING_API || API,
-  owner: env.VITE_OWNER_API || API,
+  customer: surface(env.VITE_CUSTOMER_API),
+  waiter: surface(env.VITE_WAITER_API),
+  kitchen: surface(env.VITE_KITCHEN_API),
+  billing: surface(env.VITE_BILLING_API),
+  owner: surface(env.VITE_OWNER_API),
 };
 
 // Auth context set by the AuthProvider after login: a bearer token + the
