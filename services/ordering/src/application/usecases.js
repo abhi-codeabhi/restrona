@@ -43,6 +43,19 @@ export function makeUseCases({ orders, sessions, outbox, clock }) {
       return ok(all.filter((o) => key(o.tableId) === want && (includeBilled || !o.billed)));
     },
 
+    // Move every open order from one table to another (used when the waiter
+    // moves/swaps a party). Tolerant table matching; returns the count moved.
+    async relocateOrders(tenant, fromTable, toTable) {
+      const key = (v) => { const d = String(v ?? '').replace(/\D/g, ''); return d || String(v ?? ''); };
+      const from = key(fromTable);
+      const all = await orders.list(tenant);
+      let n = 0;
+      for (const o of all) {
+        if (key(o.tableId) === from && !o.billed) { await orders.save(tenant, { ...o, tableId: toTable }); n++; }
+      }
+      return ok(n);
+    },
+
     // Mark an order as included in a finalized bill so it isn't billed twice.
     async markBilled(tenant, orderId) {
       const order = await orders.findById(tenant, orderId);

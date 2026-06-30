@@ -10,6 +10,7 @@ import { AppError, UnauthorizedError } from '#core';
 import { withTenant, resolveTenantFromHeaders } from '#tenancy';
 import { openTableBill } from '../../../services/orchestration/src/tableBill.js';
 import { buildFloorView } from '../../../services/orchestration/src/floorView.js';
+import { relocateTable } from '../../../services/orchestration/src/relocateTable.js';
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -72,7 +73,19 @@ async function route(req, res, path, url, tenant, uc) {
     return { ok: true, value: r.value.map(({ item, ok, reasons }) => ({ item, suitable: ok, reasons })) };
   }
   if (m === 'POST' && path === '/orders') {
-    const r = await uc.ordering.placeOrder(tenant, await readBody(req));
+    const body = (await readBody(req)) ?? {};
+    // Resolve dish names from the catalog at order time so every downstream
+    // surface (kitchen ticket, serve queue, billing preview, final bill) shows
+    // human names rather than the raw menuItemId the client sends.
+    if (Array.isArray(body.items)) {
+      for (const it of body.items) {
+        if (it && it.menuItemId && !it.name) {
+          const ci = await uc.catalog.getItem(tenant, it.menuItemId);
+          if (ci.ok) it.name = ci.value.name;
+        }
+      }
+    }
+    const r = await uc.ordering.placeOrder(tenant, body);
     return r.ok ? { ok: true, status: 201, value: r.value } : r;
   }
   if (m === 'GET' && (mt = path.match(/^\/orders\/([^/]+)$/))) {
@@ -135,7 +148,8 @@ async function route(req, res, path, url, tenant, uc) {
   }
   if (m === 'POST' && path === '/tables/move') {
     const body = (await readBody(req)) ?? {};
-    return await uc.floor.moveTable(tenant, { srcN: body.srcN, dstN: body.dstN });
+    // Relocates the floor seat AND the party's orders + kitchen tickets together.
+    return await relocateTable({ useCases: uc, tenant, srcN: body.srcN, dstN: body.dstN });
   }
   if (m === 'GET' && path === '/requests') return await uc.serviceRequests.listOpen(tenant);
   if (m === 'POST' && path === '/requests/escalate') {

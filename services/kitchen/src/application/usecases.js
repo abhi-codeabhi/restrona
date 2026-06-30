@@ -110,6 +110,19 @@ export function makeKitchenUseCases({ tickets, outbox, clock }) {
       return ok(updated);
     },
 
+    // Move every live ticket from one table label to another (waiter move/swap),
+    // so the kitchen + serve queue follow the party. Tolerant table matching.
+    async relocateTickets(tenant, fromTable, toTable) {
+      const key = (v) => { const d = String(v ?? '').replace(/\D/g, ''); return d || String(v ?? ''); };
+      const from = key(fromTable);
+      const all = await tickets.list(tenant);
+      let n = 0;
+      for (const t of all) {
+        if (key(t.table) === from && !t.served) { await tickets.save(tenant, { ...t, table: toTable }); n++; }
+      }
+      return ok(n);
+    },
+
     // The active KITCHEN board: tickets still being cooked, oldest first.
     // Ready (bumped) and served tickets have left the cook's screen.
     async getBoard(tenant) {
