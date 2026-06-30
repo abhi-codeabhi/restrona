@@ -6,12 +6,14 @@ import { RequireRole } from './auth/RequireRole';
 const Customer = lazy(() => import('./surfaces/customer/Customer'));
 const Kitchen = lazy(() => import('./surfaces/kitchen/Kitchen'));
 const Waiter = lazy(() => import('./surfaces/waiter/Waiter'));
+const Billing = lazy(() => import('./surfaces/billing/Billing'));
 const Owner = lazy(() => import('./surfaces/owner/Owner'));
 
 const ROLES = [
-  { to: '/customer', label: 'Customer', sub: 'menu · order · pay', icon: '🍽' },
+  { to: '/customer', label: 'Customer', sub: 'menu · order', icon: '🍽' },
   { to: '/kitchen', label: 'Kitchen', sub: 'live ticket board', icon: '🔥' },
   { to: '/waiter', label: 'Waiter', sub: 'floor · now · serve', icon: '🧑‍🍳' },
+  { to: '/billing', label: 'Billing', sub: 'settle · take payment', icon: '🧾' },
   { to: '/owner', label: 'Owner', sub: 'insights · menu IQ', icon: '👑' },
 ];
 
@@ -73,6 +75,7 @@ const router = createBrowserRouter([
   // Staff/owner are gated per persona (OTP). No-op until Supabase auth is configured.
   { path: '/kitchen', element: <Surface><RequireRole roles={['kitchen', 'manager', 'owner']} persona="kitchen"><Kitchen /></RequireRole></Surface> },
   { path: '/waiter', element: <Surface><RequireRole roles={['waiter', 'manager', 'owner']} persona="waiter"><Waiter /></RequireRole></Surface> },
+  { path: '/billing', element: <Surface><RequireRole roles={['billing', 'cashier', 'manager', 'owner']} persona="billing"><Billing /></RequireRole></Surface> },
   { path: '/owner', element: <Surface><RequireRole roles={['owner', 'manager']} persona="owner"><Owner /></RequireRole></Surface> },
 ]);
 
