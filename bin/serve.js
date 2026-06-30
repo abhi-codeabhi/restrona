@@ -20,35 +20,19 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 // listening http.Server (seeded where a seeded builder exists).
 const APPS = {
   // Unified API — one process, every surface, shared store + order-flow saga.
-  // This is the default for a real deploy (durable when DATABASE_URL is set).
+  // This is the production deployable (durable when DATABASE_URL is set). It
+  // replaced the five per-surface BFFs, which were composed from the same
+  // bounded-context services that `api` now wires together in one process.
   api: {
     module: '../bff/api/src/build.js',
     build: (m) => m.buildApiFromEnv(),
   },
-  customer: {
-    module: '../bff/customer/src/build.js',
-    build: (m) => m.buildSeededCustomerBff(),
-  },
-  waiter: {
-    module: '../bff/waiter/src/build.js',
-    build: (m) => m.buildSeededWaiterBff(),
-  },
-  kitchen: {
-    module: '../bff/kitchen/src/build.js',
-    build: (m) => m.buildSeededKitchenBff(),
-  },
-  billing: {
-    module: '../bff/billing/src/build.js',
-    build: (m) => m.buildSeededBillingBff(),
-  },
+  // The ordering service can also run standalone (its own HTTP adapter) — kept
+  // for local/testing of that bounded context in isolation.
   ordering: {
     module: '../services/ordering/src/main.js',
     // Env-aware: in-memory by default, Postgres/Supabase when DATABASE_URL is set.
     build: (m) => m.buildAppFromEnv(),
-  },
-  owner: {
-    module: '../bff/owner/src/build.js',
-    build: (m) => m.buildSeededOwnerBff(),
   },
 };
 
