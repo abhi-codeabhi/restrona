@@ -21,6 +21,16 @@ const SERVICES = [
   { type: 'bill', label: 'Ask for the bill' }, { type: 'cutlery', label: 'Cutlery / napkins' },
 ];
 
+// The table comes from the QR the manager printed: /customer?table=7. Falls back
+// to 12 for a bare /customer (e.g. the demo launcher) so nothing breaks.
+const TABLE = (() => {
+  try {
+    const raw = new URLSearchParams(window.location.search).get('table');
+    const n = raw ? parseInt(String(raw).replace(/\D/g, ''), 10) : NaN;
+    return Number.isInteger(n) && n > 0 ? n : 12;
+  } catch { return 12; }
+})();
+
 export default function Customer() {
   // Dine-in: no payment at order time. Place an order (it goes to the kitchen),
   // keep ordering across the meal, and ask for the bill at the end.
@@ -66,7 +76,7 @@ export default function Customer() {
     if (lines.length === 0) return;
     setPlacing(true);
     try {
-      await customerApi.placeOrder({ tableId: 'T12', items: lines });
+      await customerApi.placeOrder({ tableId: 'T' + TABLE, items: lines });
       setCart({});
       setTab('sent');
     } catch (e: any) {
@@ -113,7 +123,7 @@ export default function Customer() {
 
       {tab === 'cart' && <Cart cart={cart} subtotal={subtotal} placing={placing} onBack={() => setTab('menu')} onPlace={placeOrder} setQty={setQty} />}
       {tab === 'sent' && <Sent onMore={() => setTab('menu')} onBill={async () => {
-        try { await customerApi.serviceRequest({ type: 'bill', table: 12 }); flash('Bill requested — a server is on the way'); }
+        try { await customerApi.serviceRequest({ type: 'bill', table: TABLE }); flash('Bill requested — a server is on the way'); }
         catch (e: any) { flash(e?.message || 'Could not request the bill'); }
       }} />}
 
@@ -132,7 +142,7 @@ export default function Customer() {
         onDone={() => { setSheet(null); loadMenu(); }} />}
       {sheet === 'service' && <ServiceSheet onClose={() => setSheet(null)} onSend={async (type, label) => {
         setSheet(null);
-        try { await customerApi.serviceRequest({ type, table: 12 }); flash(label + ' sent'); }
+        try { await customerApi.serviceRequest({ type, table: TABLE }); flash(label + ' sent'); }
         catch (e: any) { flash(e.message || 'Could not send'); }
       }} />}
 
@@ -147,7 +157,7 @@ function Header({ onPrefs, onService, prefsCount }: any) {
       <div>
         <div className="kicker">Fine dining</div>
         <div style={{ fontSize: 19, fontWeight: 600 }}>Restorna</div>
-        <div className="xs muted" style={{ marginTop: 2 }}>Table 12</div>
+        <div className="xs muted" style={{ marginTop: 2 }}>Table {TABLE}</div>
       </div>
       <button aria-label="Service" onClick={onService} style={iconBtn}>🔔</button>
     </div>
@@ -221,7 +231,7 @@ function Cart({ cart, subtotal, placing, onBack, onPlace, setQty }: any) {
   const tax = Math.round(subtotal * 0.05);
   return (
     <div style={{ padding: '14px 16px' }}>
-      <div className="kicker">This round</div><h2 style={{ fontSize: 16, margin: '2px 0 12px' }}>Table 12</h2>
+      <div className="kicker">This round</div><h2 style={{ fontSize: 16, margin: '2px 0 12px' }}>Table {TABLE}</h2>
       {lines.length === 0 && <div className="rz-empty">Your cart is empty.</div>}
       {lines.map((l) => (
         <div key={l.item.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 0', borderBottom: '0.5px solid var(--border)' }}>

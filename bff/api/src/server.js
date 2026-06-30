@@ -296,7 +296,15 @@ async function route(req, res, path, url, tenant, uc) {
   }
   if (m === 'POST' && path === '/admin/tables/assign') {
     const body = (await readBody(req)) ?? {};
-    return await uc.floor.assignWaiter(tenant, { n: body.n, waiterId: body.waiterId });
+    // Assign one table ({n, waiterId}) or MANY at once ({ns:[...], waiterId}) so a
+    // manager can give a whole section to one waiter in a single action.
+    const ns = Array.isArray(body.ns) ? body.ns : (body.n != null ? [body.n] : []);
+    let last = { ok: true, value: null };
+    for (const n of ns) {
+      last = await uc.floor.assignWaiter(tenant, { n, waiterId: body.waiterId });
+      if (!last.ok) return last;
+    }
+    return last.value ? last : { ok: true, value: { assigned: ns.length } };
   }
   // Manager menu view: every item incl. unavailable (toggle via POST /menu/86).
   if (m === 'GET' && path === '/menu/all') return await uc.catalog.listAll(tenant);

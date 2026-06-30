@@ -210,6 +210,20 @@ test('manager: staff roster — list seeded, add, disable', async () => {
   } finally { await api.close(); }
 });
 
+test('manager: assign MANY tables to one waiter in a single action', async () => {
+  const api = await startApi();
+  try {
+    const w = (await api.post('/admin/staff', { name: 'Kabir', role: 'waiter' })).body;
+    await api.post('/admin/tables/assign', { ns: [1, 2, 3], waiterId: w.id });
+    const floor = (await api.get('/floor')).body.tables;
+    assert.deepEqual([1, 2, 3].map((n) => floor.find((t) => t.n === n).waiterId), [w.id, w.id, w.id]);
+    // reassign table 2 to someone else
+    const w2 = (await api.post('/admin/staff', { name: 'Lina', role: 'waiter' })).body;
+    await api.post('/admin/tables/assign', { n: 2, waiterId: w2.id });
+    assert.equal((await api.get('/floor')).body.tables.find((t) => t.n === 2).waiterId, w2.id);
+  } finally { await api.close(); }
+});
+
 test('manager: enable/disable a menu item reflects on the customer menu', async () => {
   const api = await startApi();
   try {

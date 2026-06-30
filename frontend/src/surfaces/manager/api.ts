@@ -2,7 +2,8 @@ import { createClient, BASES } from '../../lib/api';
 
 /* Manager console talks to the unified API via BASES.owner (VITE_OWNER_API or the
    single VITE_API_URL). It drives the day-to-day floor levers an owner delegates:
-   team roster + table assignment, menu 86-ing, and the nudge cadence config. */
+   team roster + table assignment, table QR codes, menu 86-ing, and the nudge
+   cadence config. */
 const c = createClient(BASES.owner);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -49,13 +50,18 @@ export function normalizeMenu(r: any): MenuItem[] {
   }));
 }
 
+// GET /floor returns a floor DOC { tables:[...] } (may be wrapped as { value:{tables} }),
+// but be forgiving if a raw array or { value:[...] } shows up instead.
 export function normalizeFloor(r: any): FloorTable[] {
-  const src = Array.isArray(r) || (r && Array.isArray(r.value)) ? listOf(r) : listOf(r?.tables);
-  return src.map((t: any) => ({
-    n: Number(t.n ?? t.table ?? t.number ?? 0),
-    status: String(t.status ?? 'free'),
-    waiterId: t.waiterId != null ? String(t.waiterId) : null,
-  }));
+  const doc = r && r.value && !Array.isArray(r.value) ? r.value : r;
+  const src = Array.isArray(doc) || (doc && Array.isArray(doc.value)) ? listOf(doc) : listOf(doc?.tables);
+  return src
+    .map((t: any) => ({
+      n: Number(t.n ?? t.table ?? t.number ?? 0),
+      status: String(t.status ?? 'free'),
+      waiterId: t.waiterId != null ? String(t.waiterId) : null,
+    }))
+    .sort((a, b) => a.n - b.n);
 }
 
 export function normalizeNudgeConfig(r: any): NudgeConfig {
@@ -75,8 +81,9 @@ export const managerApi = {
   getStaff: () => c.get('/admin/staff'),
   addStaff: (name: string, role: string) => c.post('/admin/staff', { name, role }),
   disableStaff: (id: string) => c.post('/admin/staff/' + encodeURIComponent(id) + '/disable'),
-  assignTable: (n: number, staffId: string) => c.post('/admin/tables/assign', { n, waiterId: staffId }),
   getFloor: () => c.get('/floor'),
+  // Assign MANY tables to one waiter at once; reassigning just moves a table.
+  assignTables: (ns: number[], waiterId: string) => c.post('/admin/tables/assign', { ns, waiterId }),
   getAllMenu: () => c.get('/menu/all'),
   toggleItem: (itemId: string, available: boolean) => c.post('/menu/86', { itemId, available }),
   getNudgeConfig: () => c.get('/admin/nudge-config'),
