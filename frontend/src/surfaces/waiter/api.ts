@@ -23,6 +23,9 @@ export const waiterApi = {
   getServeQueue: () => c.get('/serve-queue'),
   // POST /tickets/:id/serve -> marks just that ticket served (per order, not table).
   serveTicket: (ticketId: string) => c.post('/tickets/' + encodeURIComponent(ticketId) + '/serve'),
+  // POST /bills/open-for-table { table } -> generate the aggregated final bill so
+  // the waiter can settle (or hand to billing). Same call the billing agent uses.
+  openTableBill: (table: number) => c.post('/bills/open-for-table', { table }),
 };
 
 // ---- Normalizers: BFF responses wrap differently (use-case ok() values surface

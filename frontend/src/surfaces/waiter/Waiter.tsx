@@ -157,10 +157,18 @@ export default function Waiter() {
     setLeaving((l) => ({ ...l, [it.key]: true }));
     try {
       if (it.kind === 'request' && it.req) {
-        await waiterApi.ackRequest(it.req.id);
-        // optimistic local removal
-        setReqs((rs) => rs.filter((r) => r.id !== it.req!.id));
-        flash(`Acknowledged · Table ${it.table}`);
+        if (it.req.type === 'bill') {
+          // Waiter generates the aggregated final bill, then clears the request.
+          const r = await waiterApi.openTableBill(it.table);
+          await waiterApi.ackRequest(it.req.id);
+          setReqs((rs) => rs.filter((rr) => rr.id !== it.req!.id));
+          const total = r?.totals?.total?.formatted || r?.totals?.total?.minor;
+          flash(total ? `Bill generated · Table ${it.table} · ${typeof total === 'string' ? total : '₹' + (total / 100).toFixed(2)}` : `Bill generated · Table ${it.table}`);
+        } else {
+          await waiterApi.ackRequest(it.req.id);
+          setReqs((rs) => rs.filter((rr) => rr.id !== it.req!.id));
+          flash(`Acknowledged · Table ${it.table}`);
+        }
       } else if (it.ticketId) {
         // Deliver THIS ticket (one order). Other rounds at the same table are
         // separate cards and stay until they're each served.
@@ -301,7 +309,8 @@ function Tabs({ tab, setTab, pending, occupied }: any) {
 function FeedCard({ it, top, now, busy, onAct }: { it: FeedItem; top: boolean; now: number; busy: boolean; onAct: () => void }) {
   const accent = it.escalated ? 'var(--red)' : top ? 'var(--g)' : 'var(--border2)';
   const isServe = it.kind === 'serve';
-  const cta = isServe ? 'Serve' : it.escalated ? 'Acknowledge' : 'Acknowledge';
+  const isBill = it.kind === 'request' && it.req?.type === 'bill';
+  const cta = isServe ? 'Serve' : isBill ? 'Generate bill' : 'Acknowledge';
   return (
     <div
       className="rz-card"
