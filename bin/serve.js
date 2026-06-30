@@ -19,6 +19,12 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 // Map each APP to the module to import and the function that yields a NOT-yet
 // listening http.Server (seeded where a seeded builder exists).
 const APPS = {
+  // Unified API — one process, every surface, shared store + order-flow saga.
+  // This is the default for a real deploy (durable when DATABASE_URL is set).
+  api: {
+    module: '../bff/api/src/build.js',
+    build: (m) => m.buildApiFromEnv(),
+  },
   customer: {
     module: '../bff/customer/src/build.js',
     build: (m) => m.buildSeededCustomerBff(),

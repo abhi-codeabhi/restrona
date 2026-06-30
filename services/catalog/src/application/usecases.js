@@ -75,6 +75,14 @@ export function makeCatalogUseCases({ items, outbox, clock }) {
       return ok(all.filter((it) => it.available));
     },
 
+    // Resolve a single item by id (used by the order-flow saga to turn an order
+    // line's menuItemId into a human name + station for the kitchen ticket).
+    async getItem(tenant, itemId) {
+      const item = await items.findById(tenant, itemId);
+      if (!item) return err(new NotFoundError(`Item ${itemId} not found`));
+      return ok(item);
+    },
+
     async evaluateMenu(tenant, { prefs = [] } = {}) {
       const all = await items.list(tenant);
       const active = all.filter((it) => it.available);

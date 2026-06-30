@@ -74,6 +74,13 @@ export function makeBillingUseCases({ bills, outbox, clock }) {
       return ok({ bill, totals: computeTotals(bill) });
     },
 
+    // Open (unpaid) bills with their computed totals — the billing surface's queue.
+    async listOpen(tenant) {
+      const all = await bills.list(tenant);
+      const open = all.filter((b) => b.status === 'open');
+      return ok(open.map((bill) => ({ bill, totals: computeTotals(bill) })));
+    },
+
     async applyDiscount(tenant, billId, { minor, reason } = {}) {
       const existing = await bills.findById(tenant, billId);
       if (!existing) return err(new NotFoundError(`Bill ${billId} not found`));

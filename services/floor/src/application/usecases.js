@@ -1,7 +1,7 @@
 // Application layer — Floor use cases orchestrate the domain + ports (floor repo, outbox).
 // Depend on PORTS, not impls. One Floor doc per tenant; commands mutate it and stage events.
 import { ok, err, NotFoundError } from '#core';
-import { createFloor, seat, assign, moveOrSwap } from '../domain/floor.js';
+import { createFloor, seat, assign, moveOrSwap, setStatus } from '../domain/floor.js';
 import {
   EVENTS, MOVE_EVENT, evt,
   validateInitFloor, validateSeatTable, validateAssignWaiter, validateMoveTable,
@@ -59,6 +59,39 @@ export function makeFloorUseCases({ floor, outbox }) {
       await floor.save(tenant, updated);
       outbox.add(evt(MOVE_EVENT[verb], tenant.tenantId, { srcN: v.value.srcN, dstN: v.value.dstN, verb }));
       return ok({ floor: updated, verb });
+    },
+
+    // Idempotently guarantee a table exists, creating the floor on first use.
+    // The order-flow saga calls this so an order can seat its table even if the
+    // floor was never explicitly initialized for this tenant.
+    async ensureTable(tenant, { n }) {
+      if (!Number.isInteger(n)) return err(new NotFoundError('A numeric table number is required'));
+      let doc = await load(tenant);
+      if (!doc) {
+        doc = createFloor({ tableNumbers: [n] });
+        await floor.save(tenant, doc);
+        outbox.add(evt(EVENTS.FloorInitialized, tenant.tenantId, { tables: [n] }));
+        return ok(doc);
+      }
+      if (!doc.tables.find((t) => t.n === n)) {
+        doc.tables.push({ n, status: 'free', order: null, waiterId: null });
+        await floor.save(tenant, doc);
+      }
+      return ok(doc);
+    },
+
+    // Set a table's live status (free|seated|cooking|ready|billing). Used by the
+    // saga: 'cooking' when the kitchen receives the ticket, 'ready' when bumped.
+    async setTableStatus(tenant, { n, status, order }) {
+      const doc = await load(tenant);
+      if (!doc) return err(new NotFoundError('Floor not initialized'));
+      setStatus(doc, n, status); // domain throws DomainError for unknown status/table
+      if (order !== undefined && order !== null) {
+        doc.tables.find((t) => t.n === n).order = order;
+      }
+      await floor.save(tenant, doc);
+      outbox.add(evt(EVENTS.TableSeated, tenant.tenantId, { n, status }));
+      return ok(doc);
     },
 
     async getFloor(tenant) {
