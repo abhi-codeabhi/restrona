@@ -1,0 +1,8 @@
+{
+  "name": "@restorna/contracts",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "dependencies": { "@restorna/core": "workspace:*" }
+}

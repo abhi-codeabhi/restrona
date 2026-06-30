@@ -1,0 +1,55 @@
+# Render Blueprint — deploys the Restorna BFFs as Docker web services.
+# Each service runs the same image; the APP env var selects which BFF it serves.
+# Render injects PORT automatically; bin/serve.js reads it. Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: restorna-customer
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free                 # upgrade to "starter" to avoid free-tier spin-down
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: APP
+        value: customer
+      - key: DATABASE_URL      # set in the Render dashboard (Supabase pooler URL) for persistence
+        sync: false
+
+  - type: web
+    name: restorna-waiter
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: APP
+        value: waiter
+      - key: DATABASE_URL
+        sync: false
+
+  - type: web
+    name: restorna-kitchen
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: APP
+        value: kitchen
+      - key: DATABASE_URL
+        sync: false
+
+  - type: web
+    name: restorna-billing
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: APP
+        value: billing
+      - key: DATABASE_URL
+        sync: false

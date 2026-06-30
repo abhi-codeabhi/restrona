@@ -1,0 +1,64 @@
+# Restorna — local stack.
+#
+# Infra (postgres + redis + nats) are the backing services for the production
+# adapters. The reference code runs in-memory without them; wire real adapters
+# to use them. The four app services below all build from the SAME Dockerfile
+# and differ only by the APP env var and host port — proving the "one image,
+# any host" model locally.
+version: "3.9"
+
+services:
+  # ---- Infra (backing services for production adapters) -------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: restorna
+      POSTGRES_PASSWORD: restorna
+      POSTGRES_DB: restorna
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js"]            # enable JetStream
+    ports: ["4222:4222", "8222:8222"]
+
+  # ---- Apps (one image, different APP env + host port) --------------------
+  customer:
+    build: .
+    environment:
+      APP: customer
+      PORT: 8080
+    ports: ["8080:8080"]
+    depends_on: [postgres, redis, nats]
+
+  waiter:
+    build: .
+    environment:
+      APP: waiter
+      PORT: 8080
+    ports: ["8081:8080"]
+    depends_on: [postgres, redis, nats]
+
+  kitchen:
+    build: .
+    environment:
+      APP: kitchen
+      PORT: 8080
+    ports: ["8082:8080"]
+    depends_on: [postgres, redis, nats]
+
+  billing:
+    build: .
+    environment:
+      APP: billing
+      PORT: 8080
+    ports: ["8083:8080"]
+    depends_on: [postgres, redis, nats]
+
+volumes:
+  pgdata: {}

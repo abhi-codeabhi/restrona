@@ -1,0 +1,19 @@
+{
+  "name": "restorna",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Restorna — multi-tenant restaurant OS. Runnable reference foundation (10 bounded-context services, hexagonal, dependency-free).",
+  "imports": {
+    "#core": "./packages/core/src/index.js",
+    "#contracts": "./packages/contracts/src/index.js",
+    "#tenancy": "./packages/tenancy/src/index.js",
+    "#events": "./packages/events/src/index.js"
+  },
+  "scripts": {
+    "test": "node --test services/*/test/*.test.js",
+    "start": "node services/ordering/src/main.js",
+    "demo": "node scripts/demo.js"
+  },
+  "engines": { "node": ">=20" }
+}
