@@ -187,6 +187,21 @@ export default function Waiter() {
     }
   }
 
+  // Generate the final bill for any occupied table, on demand (not only when the
+  // guest asked). Aggregates the table's open orders into one categorized bill.
+  async function genBill(n: number) {
+    try {
+      const r = await waiterApi.openTableBill(n);
+      setSheetTable(null);
+      const t = r?.totals?.total;
+      const amt = t ? (t.formatted || '₹' + ((t.minor || 0) / 100).toFixed(2)) : '';
+      flash(amt ? `Bill generated · Table ${n} · ${amt}` : `Bill generated · Table ${n}`);
+      window.setTimeout(() => refresh(false), 300);
+    } catch (e: any) {
+      flash(e?.message || `No open orders to bill at Table ${n}`);
+    }
+  }
+
   async function doMove(src: number, dst: number) {
     try {
       const res = await waiterApi.moveTable(src, dst);
@@ -262,6 +277,7 @@ export default function Waiter() {
           tables={tables}
           onClose={() => setSheetTable(null)}
           onMove={(dst) => doMove(sheetTable.n, dst)}
+          onBill={() => genBill(sheetTable.n)}
         />
       )}
 
@@ -394,13 +410,17 @@ function Legend() {
   );
 }
 
-function MoveSheet({ src, tables, onClose, onMove }: { src: Table; tables: Table[]; onClose: () => void; onMove: (dst: number) => void }) {
+function MoveSheet({ src, tables, onClose, onMove, onBill }: { src: Table; tables: Table[]; onClose: () => void; onMove: (dst: number) => void; onBill: () => void }) {
   const others = tables.filter((t) => t.n !== src.n);
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(33,30,24,.35)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 40 }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '16px 18px 24px', animation: 'rz-in .25s ease' }}>
+        <div className="kicker" style={{ marginBottom: 4 }}>Table {src.n}</div>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>{STATUS_LABEL[src.status] || src.status}</div>
+
+        <button className="rz-cta" style={{ marginBottom: 16 }} onClick={onBill}>Generate bill for Table {src.n}</button>
+
         <div className="kicker" style={{ marginBottom: 4 }}>Move or swap</div>
-        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 2 }}>Table {src.n} · {STATUS_LABEL[src.status] || src.status}</div>
         <div className="xs muted" style={{ marginBottom: 12 }}>
           Pick a destination. A free table <b>moves</b> this party; an occupied one <b>swaps</b> the two.
         </div>
