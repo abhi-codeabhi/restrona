@@ -56,22 +56,34 @@ export function makeKitchenUseCases({ tickets, outbox, clock }) {
       return ok(ticket);
     },
 
-    // Advance one item new -> preparing -> ready (stays at ready).
+    // Advance one item new -> preparing -> ready (stays at ready). When this makes
+    // the WHOLE ticket ready, notify the floor (same signal as a bump) so the
+    // waiter sees "ready to serve" whether the cook bumped or finished item-by-item.
     async advanceItem(tenant, { ticketId, itemIndex }) {
       const existing = await tickets.findById(tenant, ticketId);
       if (!existing) return err(new NotFoundError(`Ticket ${ticketId} not found`));
+      const wasReady = isAllReady(existing);
       const updated = advanceItemDomain(existing, itemIndex);
       await tickets.save(tenant, updated);
+      if (!wasReady && isAllReady(updated)) {
+        outbox.add(evt(EVENTS.TicketReady, tenant.tenantId, {
+          ticketId: updated.id, orderId: updated.orderId, table: updated.table,
+        }));
+      }
       return ok(updated);
     },
 
     // Bump the whole ticket to ready; when fully ready, stage kitchen.ticket.ready.
+    // After bump the ticket is done in the kitchen and drops off the active board
+    // (getBoard filters fully-ready tickets) — the "ready to serve" hand-off now
+    // lives on the waiter's floor (table -> ready), not the cook's screen.
     async markAllReady(tenant, { ticketId }) {
       const existing = await tickets.findById(tenant, ticketId);
       if (!existing) return err(new NotFoundError(`Ticket ${ticketId} not found`));
+      const wasReady = isAllReady(existing);
       const updated = bumpAll(existing);
       await tickets.save(tenant, updated);
-      if (isAllReady(updated)) {
+      if (!wasReady && isAllReady(updated)) {
         outbox.add(evt(EVENTS.TicketReady, tenant.tenantId, {
           ticketId: updated.id,
           orderId: updated.orderId,
@@ -81,10 +93,12 @@ export function makeKitchenUseCases({ tickets, outbox, clock }) {
       return ok(updated);
     },
 
-    // The board: live tickets, oldest first.
+    // The active board: tickets the kitchen is still working, oldest first.
+    // Fully-ready (bumped) tickets have left the kitchen, so they're excluded —
+    // the board stays focused on what's actually cooking instead of piling up.
     async getBoard(tenant) {
       const all = await tickets.list(tenant);
-      return ok(oldestFirst(all));
+      return ok(oldestFirst(all.filter((t) => !isAllReady(t))));
     },
 
     // The all-day rail: counts of not-yet-ready items across the board.

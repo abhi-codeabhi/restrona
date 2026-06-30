@@ -62,6 +62,10 @@ test('order placed by customer flows to kitchen, floor and billing', async () =>
   const floor2 = (await uc.floor.getFloor(TENANT)).value;
   assert.equal(floor2.tables.find((t) => t.n === 5).status, 'ready', 'table ready to serve');
 
+  // 5b) Kitchen: a bumped ticket leaves the active board (it's done cooking).
+  const boardAfter = (await uc.kitchen.getBoard(TENANT)).value;
+  assert.ok(!boardAfter.find((t) => t.id === ticket.id), 'bumped ticket cleared from the board');
+
   // 6) Dine-in: the guest has NOT paid and NO bill exists yet.
   assert.equal((await uc.billing.listOpen(TENANT)).value.length, 0, 'no bill until requested');
 });
