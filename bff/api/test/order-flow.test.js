@@ -169,6 +169,23 @@ test('table accumulates multiple orders; one final categorized bill on request',
   assert.equal((await uc.billing.listOpen(TENANT)).value.length, 1, 'still exactly one bill');
 });
 
+test('billing matches tables tolerantly: order placed as "T9" bills via numeric 9', async () => {
+  const app = buildApiApp();
+  await seedDemoData(app.useCases, 'acme');
+  const { useCases: uc, outbox, bus } = app;
+  await drain(outbox, bus);
+
+  const butter = (await uc.catalog.getMenu(TENANT)).value.find((i) => i.name === 'Butter Chicken');
+  await uc.ordering.placeOrder(TENANT, { tableId: 'T9', items: [{ menuItemId: butter.id, unitPriceMinor: butter.price.minor, qty: 1 }] });
+  await drain(outbox, bus);
+
+  // Billing surface passes the NUMERIC table (9), order was placed as "T9".
+  assert.equal((await uc.ordering.listForTable(TENANT, 9)).value.length, 1, 'numeric 9 matches "T9"');
+  const billed = await openTableBill({ useCases: uc, tenant: TENANT, table: 9 });
+  assert.ok(billed.ok, 'bill generated via numeric table');
+  assert.equal(billed.value.orderCount, 1);
+});
+
 test('order with an unknown (non-numeric) table still reaches the kitchen', async () => {
   const app = buildApiApp();
   await seedDemoData(app.useCases, 'acme');

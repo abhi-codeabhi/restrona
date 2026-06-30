@@ -34,9 +34,13 @@ export function makeUseCases({ orders, sessions, outbox, clock }) {
     // All orders for a table. Dine-in guests order several times across a meal;
     // by default this returns only the not-yet-billed ones (what a final bill
     // should aggregate). Pass includeBilled to see the whole table history.
+    // Table identifiers are matched tolerantly ("T12" / "12" / 12 all match) so
+    // surfaces using a numeric table and orders placed as "T12" still line up.
     async listForTable(tenant, table, { includeBilled = false } = {}) {
+      const key = (v) => { const d = String(v ?? '').replace(/\D/g, ''); return d || String(v ?? ''); };
+      const want = key(table);
       const all = await orders.list(tenant);
-      return ok(all.filter((o) => o.tableId === table && (includeBilled || !o.billed)));
+      return ok(all.filter((o) => key(o.tableId) === want && (includeBilled || !o.billed)));
     },
 
     // Mark an order as included in a finalized bill so it isn't billed twice.
