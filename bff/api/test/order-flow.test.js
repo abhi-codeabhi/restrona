@@ -66,7 +66,13 @@ test('order placed by customer flows to kitchen, floor and billing', async () =>
   const boardAfter = (await uc.kitchen.getBoard(TENANT)).value;
   assert.ok(!boardAfter.find((t) => t.id === ticket.id), 'bumped ticket cleared from the board');
 
-  // 6) Dine-in: the guest has NOT paid and NO bill exists yet.
+  // 6) Waiter serves the ready table: it returns to 'seated' so the serve prompt
+  // clears server-side and won't reappear on the next poll.
+  await uc.floor.setTableStatus(TENANT, { n: 5, status: 'seated' });
+  const floor3 = (await uc.floor.getFloor(TENANT)).value;
+  assert.equal(floor3.tables.find((t) => t.n === 5).status, 'seated', 'served table no longer ready');
+
+  // 7) Dine-in: the guest has NOT paid and NO bill exists yet.
   assert.equal((await uc.billing.listOpen(TENANT)).value.length, 0, 'no bill until requested');
 });
 

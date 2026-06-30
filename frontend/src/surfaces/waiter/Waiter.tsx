@@ -171,7 +171,9 @@ export default function Waiter() {
         setReqs((rs) => rs.filter((r) => r.id !== it.req!.id));
         flash(`Acknowledged · Table ${it.table}`);
       } else {
-        // No dedicated serve endpoint; clearing locally.  // TODO: wire to a /serve or status route when the BFF exposes one
+        // Mark the table served on the server (ready -> seated) so the prompt
+        // clears for good instead of reappearing on the next poll.
+        await waiterApi.serveTable(it.table);
         delete serveSeen.current[it.table];
         setTables((ts) => ts.map((t) => (t.n === it.table && t.status === 'ready' ? { ...t, status: 'seated' } : t)));
         flash(`Served · Table ${it.table}`);

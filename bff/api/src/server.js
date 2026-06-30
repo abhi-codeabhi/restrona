@@ -115,6 +115,12 @@ async function route(req, res, path, url, tenant, uc) {
     const body = (await readBody(req)) ?? {};
     return await uc.floor.moveTable(tenant, { srcN: body.srcN, dstN: body.dstN });
   }
+  // Waiter serves a ready table: food delivered, table goes back to dining
+  // ('seated') so the serve prompt clears server-side and doesn't reappear.
+  if (m === 'POST' && path === '/tables/serve') {
+    const body = (await readBody(req)) ?? {};
+    return await uc.floor.setTableStatus(tenant, { n: body.n, status: 'seated' });
+  }
   if (m === 'GET' && path === '/requests') return await uc.serviceRequests.listOpen(tenant);
   if (m === 'POST' && path === '/requests/escalate') {
     const body = (await readBody(req)) ?? {};

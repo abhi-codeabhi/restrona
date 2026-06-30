@@ -19,6 +19,9 @@ export const waiterApi = {
   moveTable: (srcN: number, dstN: number) => c.post('/tables/move', { srcN, dstN }),
   // POST /tables/assign { n, waiterId } -> floor
   assignWaiter: (n: number, waiterId: string) => c.post('/tables/assign', { n, waiterId }),
+  // POST /tables/serve { n } -> floor (ready -> seated). Marks a ready table served
+  // server-side so the serve prompt clears and doesn't return on the next poll.
+  serveTable: (n: number) => c.post('/tables/serve', { n }),
 };
 
 // ---- Normalizers: BFF responses wrap differently (use-case ok() values surface
