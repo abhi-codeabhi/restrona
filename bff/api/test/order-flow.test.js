@@ -6,6 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApiApp, seedDemoData } from '../src/build.js';
+import { openTableBill } from '../../../services/orchestration/src/tableBill.js';
 
 const TENANT = { tenantId: 'acme', tier: 'T1_POOLED', region: 'ap-mumbai-1' };
 
@@ -55,18 +56,59 @@ test('order placed by customer flows to kitchen, floor and billing', async () =>
   // 4) Kitchen bumps the whole ticket to ready.
   const bumped = await uc.kitchen.markAllReady(TENANT, { ticketId: ticket.id });
   assert.ok(bumped.ok);
-  await drain(outbox, bus); // saga: TicketReady -> floor ready + open bill
+  await drain(outbox, bus); // saga: TicketReady -> floor ready (NO bill yet)
 
   // 5) Floor: table 5 now 'ready' (waiter's serve feed).
   const floor2 = (await uc.floor.getFloor(TENANT)).value;
   assert.equal(floor2.tables.find((t) => t.n === 5).status, 'ready', 'table ready to serve');
 
-  // 6) Billing: a bill was opened for this order with all 3 units.
-  const open = (await uc.billing.listOpen(TENANT)).value;
-  const bill = open.find((b) => b.bill.orderId === orderId);
-  assert.ok(bill, 'bill opened by saga');
-  assert.equal(bill.bill.lines.length, 3, 'bill has every unit');
-  assert.ok(bill.totals.total.minor > 0, 'bill has a positive total');
+  // 6) Dine-in: the guest has NOT paid and NO bill exists yet.
+  assert.equal((await uc.billing.listOpen(TENANT)).value.length, 0, 'no bill until requested');
+});
+
+test('table accumulates multiple orders; one final bill is generated on request', async () => {
+  const app = buildApiApp();
+  await seedDemoData(app.useCases, 'acme');
+  const { useCases: uc, outbox, bus } = app;
+  await drain(outbox, bus);
+
+  const menu = (await uc.catalog.getMenu(TENANT)).value;
+  const butter = menu.find((i) => i.name === 'Butter Chicken');
+  const naan = menu.find((i) => i.name === 'Garlic Naan');
+  const lassi = menu.find((i) => i.name === 'Mango Lassi');
+
+  // First round of ordering at table 8.
+  const o1 = await uc.ordering.placeOrder(TENANT, {
+    tableId: 'T8', items: [{ menuItemId: butter.id, unitPriceMinor: butter.price.minor, qty: 1 }],
+  });
+  await drain(outbox, bus);
+  // Later in the meal, the same table orders again.
+  const o2 = await uc.ordering.placeOrder(TENANT, {
+    tableId: 'T8', items: [
+      { menuItemId: naan.id, unitPriceMinor: naan.price.minor, qty: 2 },
+      { menuItemId: lassi.id, unitPriceMinor: lassi.price.minor, qty: 1 },
+    ],
+  });
+  await drain(outbox, bus);
+  assert.ok(o1.ok && o2.ok);
+
+  // No bill yet — the guest is still dining.
+  assert.equal((await uc.billing.listOpen(TENANT)).value.length, 0);
+
+  // Waiter/billing agent asks for the bill: ONE bill aggregates both orders.
+  const billed = await openTableBill({ useCases: uc, tenant: TENANT, table: 'T8' });
+  assert.ok(billed.ok, 'final bill generated');
+  assert.equal(billed.value.orderCount, 2, 'aggregated both orders');
+  assert.equal(billed.value.bill.lines.length, 4, '1 butter + 2 naan + 1 lassi = 4 units');
+  // Dish names resolved (not raw menuItemIds).
+  assert.ok(billed.value.bill.lines.some((l) => l.name === 'Butter Chicken'), 'names resolved');
+  // Floor moved to billing.
+  assert.equal((await uc.floor.getFloor(TENANT)).value.tables.find((t) => t.n === 8).status, 'billing');
+
+  // Asking again does not double-bill (orders are marked billed).
+  const again = await openTableBill({ useCases: uc, tenant: TENANT, table: 'T8' });
+  assert.ok(!again.ok, 'no open orders left to bill');
+  assert.equal((await uc.billing.listOpen(TENANT)).value.length, 1, 'still exactly one bill');
 });
 
 test('order with an unknown table still reaches the kitchen (floor best-effort)', async () => {

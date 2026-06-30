@@ -31,6 +31,23 @@ export function makeUseCases({ orders, sessions, outbox, clock }) {
       return ok(await orders.list(tenant));
     },
 
+    // All orders for a table. Dine-in guests order several times across a meal;
+    // by default this returns only the not-yet-billed ones (what a final bill
+    // should aggregate). Pass includeBilled to see the whole table history.
+    async listForTable(tenant, table, { includeBilled = false } = {}) {
+      const all = await orders.list(tenant);
+      return ok(all.filter((o) => o.tableId === table && (includeBilled || !o.billed)));
+    },
+
+    // Mark an order as included in a finalized bill so it isn't billed twice.
+    async markBilled(tenant, orderId) {
+      const order = await orders.findById(tenant, orderId);
+      if (!order) return err(new NotFoundError(`Order ${orderId} not found`));
+      const updated = { ...order, billed: true, billedAt: clock.now().toISOString() };
+      await orders.save(tenant, updated);
+      return ok(updated);
+    },
+
     async openSession(tenant, input) {
       const v = validateOpenSession(input);
       if (!v.ok) return v;

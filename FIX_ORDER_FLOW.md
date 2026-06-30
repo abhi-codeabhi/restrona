@@ -17,18 +17,25 @@ update** — that saga never existed. So:
 2. **The order-flow saga** (`services/orchestration/src/saga.js`) — the missing
    brain:
    - `OrderPlaced` → creates a kitchen ticket **and** seats the table as `cooking`,
-   - kitchen bump (`TicketReady`) → table goes `ready` (waiter's serve feed) **and**
-     a bill is opened from the order (billing has live data).
-3. **Durable Supabase path**: when `DATABASE_URL` is set, every aggregate persists
+   - kitchen bump (`TicketReady`) → table goes `ready` (waiter's serve feed).
+3. **Dine-in billing (no upfront payment).** A guest never pays per order. A table
+   accumulates several orders across the meal; the customer can "ask for the bill"
+   (a `bill` service request the waiter/billing agent sees). The agent then calls
+   `POST /bills/open-for-table { table }`, which aggregates **every unbilled order
+   for that table into ONE final bill** (dish names resolved), marks those orders
+   billed so they can't be billed twice, and moves the table to `billing`.
+   `GET /tables/orders?table=T7` previews the running tab before generating it.
+4. **Durable Supabase path**: when `DATABASE_URL` is set, every aggregate persists
    in Postgres (`infra/migrations/004_oms_operational.sql`) and the catalog reads
    the owner's real `menu_items`. In-memory remains the zero-config demo default.
-4. **Public URL is the diner app**: `/` now redirects to `/customer`. The persona
+5. **Public URL is the diner app**: `/` now redirects to `/customer`. The persona
    picker moved to `/demo`.
-5. **Fewer background calls**: the kitchen/waiter boards pause polling when the
+6. **Fewer background calls**: the kitchen/waiter boards pause polling when the
    browser tab is hidden and refetch once on return.
 
-Verified: 116 tests pass, plus a live HTTP run (place order → ticket appears →
-floor `cooking` → bump → floor `ready` → bill `₹252.00`).
+Verified: 117 tests pass, plus live HTTP runs — order → ticket → floor `cooking`
+→ bump → floor `ready` (no bill); then two orders to one table → one final bill
+`₹483.00` with names resolved → table `billing` → repeat request blocked.
 
 ## Deploy (Render + Supabase)
 

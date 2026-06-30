@@ -7,7 +7,10 @@
 //   OrderPlaced  ─▶ create a kitchen ticket (KDS board updates)
 //                └▶ seat the order's table + mark it 'cooking' (waiter sees it)
 //   TicketReady  ─▶ mark the table 'ready' (waiter's "serve" feed)
-//                └▶ open a bill from the order (billing surface has real data)
+//
+// NOTE: billing is deliberately NOT here. Dine-in guests don't pay per order —
+// they order several times across a meal and the waiter/billing agent generates
+// ONE final bill aggregating the table's orders on request (see openTableBill).
 //
 // Storage-agnostic: works identically over in-memory or Postgres repositories,
 // because it only touches use cases. Idempotency is best-effort for the demo;
@@ -85,7 +88,7 @@ export function registerOrderFlowSaga({ bus, useCases, logger }) {
     }
   });
 
-  // ── TicketReady ▶ floor 'ready' (serve) + open the bill ─────────────────────
+  // ── TicketReady ▶ floor 'ready' (waiter's serve feed) ───────────────────────
   const offReady = bus.subscribe(KITCHEN_TICKET_READY, async (evt) => {
     const tenant = tenantOf(evt);
     const { orderId, table } = evt.payload || {};
@@ -94,24 +97,6 @@ export function registerOrderFlowSaga({ bus, useCases, logger }) {
       if (n != null && floor?.setTableStatus) {
         const rf = await floor.setTableStatus(tenant, { n, status: 'ready' });
         if (!rf.ok) log.warn('saga.floor.ready.failed', { n, error: rf.error?.message });
-      }
-
-      // Open a bill from the order so the billing surface has live data.
-      if (orderId && ordering?.getOrder && billing?.openBill) {
-        const ro = await ordering.getOrder(tenant, orderId);
-        if (ro.ok) {
-          const order = ro.value.order;
-          const billLines = [];
-          for (const ln of order.lines) {
-            const priceMinor = ln.unitPrice?.minor ?? ln.unitPriceMinor ?? 0;
-            const qty = ln.qty || 1;
-            for (let i = 0; i < qty; i++) billLines.push({ name: ln.name, priceMinor, shared: true });
-          }
-          if (billLines.length) {
-            const rb = await billing.openBill(tenant, { orderId, table, lines: billLines });
-            if (!rb.ok) log.warn('saga.billing.openBill.failed', { orderId, error: rb.error?.message });
-          }
-        }
       }
       log.info('saga.ticketReady.handled', { orderId, table });
     } catch (e) {

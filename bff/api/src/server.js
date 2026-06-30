@@ -8,6 +8,7 @@
 import http from 'node:http';
 import { AppError, UnauthorizedError } from '#core';
 import { withTenant, resolveTenantFromHeaders } from '#tenancy';
+import { openTableBill } from '../../../services/orchestration/src/tableBill.js';
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -150,6 +151,21 @@ async function route(req, res, path, url, tenant, uc) {
 
   /* ───────────────────────── Billing ───────────────────────── */
   if (m === 'GET' && path === '/bills') return await uc.billing.listOpen(tenant);
+
+  // Running (not-yet-billed) orders for a table — what the waiter/billing agent
+  // previews before generating the final bill. ?table=T7
+  if (m === 'GET' && path === '/tables/orders') {
+    const table = url.searchParams.get('table');
+    if (!table) return { ok: true, value: [] };
+    return await uc.ordering.listForTable(tenant, table);
+  }
+  // Dine-in "ask for the bill": waiter/billing initiates ONE final bill that
+  // aggregates every open order for the table. { table: "T7" }
+  if (m === 'POST' && path === '/bills/open-for-table') {
+    const body = (await readBody(req)) ?? {};
+    const r = await openTableBill({ useCases: uc, tenant, table: body.table });
+    return r.ok ? { ok: true, status: 201, value: r.value } : r;
+  }
   if (m === 'POST' && path === '/bills') {
     const body = (await readBody(req)) ?? {};
     const r = await uc.billing.openBill(tenant, { orderId: body.orderId, table: body.table, lines: body.lines });
