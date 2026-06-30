@@ -11,6 +11,7 @@ import { withTenant, resolveTenantFromHeaders } from '#tenancy';
 import { openTableBill } from '../../../services/orchestration/src/tableBill.js';
 import { buildFloorView } from '../../../services/orchestration/src/floorView.js';
 import { relocateTable } from '../../../services/orchestration/src/relocateTable.js';
+import { buildOpenTabs } from '../../../services/orchestration/src/openTabs.js';
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -191,6 +192,17 @@ async function route(req, res, path, url, tenant, uc) {
 
   /* ───────────────────────── Billing ───────────────────────── */
   if (m === 'GET' && path === '/bills') return await uc.billing.listOpen(tenant);
+
+  // Live board of every occupied table from its first order — running total,
+  // whether it asked for the bill, and whether a bill has been generated. This
+  // is what the billing agent tracks; they can generate/settle any table.
+  if (m === 'GET' && path === '/open-tabs') {
+    const orders = (await uc.ordering.listOrders(tenant)).value || [];
+    const openBills = (await uc.billing.listOpen(tenant)).value || [];
+    const reqs = (await uc.serviceRequests.listOpen(tenant)).value || [];
+    const billReqs = reqs.filter((r) => r.type === 'bill');
+    return { ok: true, value: buildOpenTabs(orders, openBills, billReqs) };
+  }
 
   // Running (not-yet-billed) orders for a table — what the waiter/billing agent
   // previews before generating the final bill. ?table=T7

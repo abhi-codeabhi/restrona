@@ -137,6 +137,32 @@ test('billing: ask -> generate (tolerant table) -> categorized -> pay -> clears'
   } finally { await api.close(); }
 });
 
+test('billing board: tracks every table from its first order', async () => {
+  const api = await startApi();
+  try {
+    // No orders yet -> empty board.
+    assert.equal((await api.get('/open-tabs')).body.length, 0);
+
+    await order(api, 'T4', [['Butter Chicken', 1]]);          // table 4 opens
+    await order(api, 'T4', [['Garlic Naan', 2]]);             // second round, same table
+    await order(api, 'T6', [['Mango Lassi', 1]]);             // table 6 opens
+
+    const tabs = (await api.get('/open-tabs')).body;
+    assert.equal(tabs.length, 2, 'two occupied tables tracked from first order');
+    const t4 = tabs.find((t) => t.table === 4);
+    assert.equal(t4.orderCount, 2);
+    assert.equal(t4.itemCount, 3);
+    assert.equal(t4.runningMinor, 34000 + 2 * 6000, 'running total from first order');
+    assert.equal(t4.status, 'open');
+
+    // Generate the bill for table 4 -> it flips to bill_ready with a bill id.
+    await api.post('/bills/open-for-table', { table: 4 });
+    const after = (await api.get('/open-tabs')).body.find((t) => t.table === 4);
+    assert.equal(after.status, 'bill_ready');
+    assert.ok(after.billId);
+  } finally { await api.close(); }
+});
+
 test('billing: coupon quote + discount lowers the total', async () => {
   const api = await startApi();
   try {

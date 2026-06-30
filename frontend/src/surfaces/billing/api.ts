@@ -6,8 +6,13 @@ import { minorOf } from '../../lib/format';
 const c = createClient(BASES.billing);
 
 export const billingApi = {
+  // GET /open-tabs -> every occupied table from its first order (running total,
+  // asked?, bill generated?). The billing board.
+  getOpenTabs: () => c.get('/open-tabs'),
   // GET /bills -> open (unpaid) bills with totals.
   getOpenBills: () => c.get('/bills'),
+  // GET /bills/:id -> { bill, totals } for one bill.
+  getBill: (id: string) => c.get('/bills/' + encodeURIComponent(id)),
   // GET /requests -> service requests; we surface the 'bill' asks.
   getRequests: () => c.get('/requests'),
   // GET /tables/orders?table=T6 -> running (unbilled) orders for a table.
@@ -28,6 +33,44 @@ export const billingApi = {
 };
 
 const tableNum = (v: any) => Number(String(v ?? '').replace(/\D/g, '')) || 0;
+
+export type Tab = {
+  table: number;
+  orderCount: number;
+  itemCount: number;
+  runningMinor: number;
+  asked: boolean;
+  billId: string | null;
+  billTotalMinor: number;
+  status: 'open' | 'asked' | 'bill_ready';
+};
+
+export function normalizeTabs(res: any): Tab[] {
+  const raw = Array.isArray(res) ? res : res?.value ?? [];
+  return (raw || []).map((t: any) => ({
+    table: tableNum(t.table),
+    orderCount: t.orderCount ?? 0,
+    itemCount: t.itemCount ?? 0,
+    runningMinor: t.runningMinor ?? 0,
+    asked: !!t.asked,
+    billId: t.billId ?? null,
+    billTotalMinor: t.billTotalMinor ?? 0,
+    status: t.status ?? 'open',
+  })).filter((t: Tab) => t.table);
+}
+
+// One bill's lines + total, for the settle screen.
+export function normalizeBillDetail(res: any) {
+  const bill = res?.bill ?? {};
+  return {
+    id: bill.id,
+    table: tableNum(bill.table),
+    totalMinor: minorOf(res?.totals?.total),
+    lines: (bill.lines ?? []).map((l: any) => ({
+      name: l.name, category: l.category ?? 'Other', priceMinor: minorOf(l.price),
+    })),
+  };
+}
 
 export type OpenBill = {
   id: string;

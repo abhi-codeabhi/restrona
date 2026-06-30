@@ -1,26 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  billingApi, normalizeOpenBills, normalizeBillRequests, normalizeTableOrders, sectionsOf,
-  type OpenBill,
+  billingApi, normalizeTabs, normalizeBillDetail, normalizeTableOrders, sectionsOf,
+  type Tab,
 } from './api';
 import { money } from '../../lib/format';
 
-/* Billing agent surface. Psychology baked in:
-   - ONE queue of tables to settle, ranked by who asked first — no hunting.
-   - the settle screen reads like the printed bill (grouped by course) so the
-     guest and agent see the same thing; one brass primary action to take payment.
-   - closure: a clear "Paid" confirmation, then the table drops off the queue. */
+/* Billing agent surface. The board lists EVERY occupied table from its first
+   order with a live running total — the agent tracks tables as they fill and
+   generates/settles any of them, not only the ones that asked. Psychology:
+   - one ranked board, status-tinted, so 20 tables stay scannable;
+   - the settle screen reads like the printed bill (grouped by course);
+   - one brass primary action; a clear "Paid" closure. */
 
 const POLL_MS = 6000;
-const METHODS = [
-  { id: 'upi', label: 'UPI' }, { id: 'card', label: 'Card' }, { id: 'cash', label: 'Cash' },
-];
+const METHODS = [{ id: 'upi', label: 'UPI' }, { id: 'card', label: 'Card' }, { id: 'cash', label: 'Cash' }];
 
-type QueueItem = { table: number; billId?: string; totalMinor?: number; asked: boolean; reqIds: string[]; lines?: OpenBill['lines'] };
+const STATUS_UI: Record<string, { label: string; color: string }> = {
+  open: { label: 'Open tab', color: 'var(--muted)' },
+  asked: { label: 'Asked for the bill', color: 'var(--amber)' },
+  bill_ready: { label: 'Bill generated', color: 'var(--g)' },
+};
 
 export default function Billing() {
-  const [openBills, setOpenBills] = useState<OpenBill[]>([]);
-  const [requests, setRequests] = useState<{ id: string; table: number }[]>([]);
+  const [tabs, setTabs] = useState<Tab[]>([]);
   const [sel, setSel] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,16 +32,9 @@ export default function Billing() {
 
   async function refresh(initial = false) {
     if (initial) { setLoading(true); setError(null); }
-    try {
-      const [b, r] = await Promise.all([billingApi.getOpenBills(), billingApi.getRequests()]);
-      setOpenBills(normalizeOpenBills(b));
-      setRequests(normalizeBillRequests(r));
-      setError(null);
-    } catch (e: any) {
-      if (initial) setError(e?.message || 'Could not load the billing queue');
-    } finally {
-      if (initial) setLoading(false);
-    }
+    try { setTabs(normalizeTabs(await billingApi.getOpenTabs())); setError(null); }
+    catch (e: any) { if (initial) setError(e?.message || 'Could not load the billing board'); }
+    finally { if (initial) setLoading(false); }
   }
 
   useEffect(() => {
@@ -51,72 +46,73 @@ export default function Billing() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel]);
 
-  // Merge open bills + bill requests into one per-table queue.
-  const queue: QueueItem[] = useMemo(() => {
-    const byTable = new Map<number, QueueItem>();
-    for (const b of openBills) byTable.set(b.table, { table: b.table, billId: b.id, totalMinor: b.totalMinor, lines: b.lines, asked: false, reqIds: [] });
-    for (const r of requests) {
-      const q = byTable.get(r.table) || { table: r.table, asked: false, reqIds: [] };
-      q.asked = true; q.reqIds.push(r.id);
-      byTable.set(r.table, q);
-    }
-    return [...byTable.values()].sort((a, b) => a.table - b.table);
-  }, [openBills, requests]);
+  // Asked-first, then open tabs, then already-billed; each ascending by table.
+  const queue = useMemo(() => {
+    const rank = (t: Tab) => (t.status === 'asked' ? 0 : t.status === 'open' ? 1 : 2);
+    return [...tabs].sort((a, b) => rank(a) - rank(b) || a.table - b.table);
+  }, [tabs]);
 
   if (sel != null) {
-    const item = queue.find((q) => q.table === sel) || { table: sel, asked: false, reqIds: [] };
-    return <Settle item={item} onDone={() => { setSel(null); refresh(false); }} flash={flash} toast={toast} />;
+    const tab = tabs.find((t) => t.table === sel) || ({ table: sel, billId: null } as Tab);
+    return <Settle tab={tab} onDone={() => { setSel(null); refresh(false); }} flash={flash} toast={toast} />;
   }
 
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', padding: '0 16px 60px' }}>
-      <div style={{ padding: '18px 0 12px' }}>
-        <div className="kicker">Billing</div>
-        <div style={{ fontSize: 21, fontWeight: 600 }}>Tables to settle</div>
+    <div style={{ maxWidth: 620, margin: '0 auto', padding: '0 16px 60px' }}>
+      <div style={{ padding: '18px 0 12px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <div><div className="kicker">Billing</div><div style={{ fontSize: 21, fontWeight: 600 }}>Open tables</div></div>
+        <div className="xs muted">{queue.length} active</div>
       </div>
 
-      {loading && <div className="rz-empty">Loading the billing queue…</div>}
+      {loading && <div className="rz-empty">Loading the billing board…</div>}
       {!loading && error && <div className="rz-empty" style={{ color: 'var(--red)' }}>{error}<br />
         <button className="rz-ghost" style={{ marginTop: 12, width: 'auto', padding: '0 16px' }} onClick={() => refresh(true)}>Retry</button></div>}
-      {!loading && !error && queue.length === 0 && <div className="rz-empty">No tables waiting to pay. 🎉</div>}
+      {!loading && !error && queue.length === 0 && <div className="rz-empty">No open tables right now.</div>}
 
-      <div style={{ display: 'grid', gap: 10 }}>
-        {queue.map((q) => (
-          <button key={q.table} onClick={() => setSel(q.table)} className="rz-card"
-            style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer', border: q.asked && !q.billId ? '1px solid var(--amber)' : undefined }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--gs)', color: 'var(--gtx)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{q.table}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600 }}>Table {q.table}</div>
-              <div className="xs muted">{q.billId ? 'Bill ready to collect' : q.asked ? 'Asked for the bill' : 'Open tab'}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              {q.billId ? <div style={{ fontWeight: 600 }}>{money(q.totalMinor || 0)}</div> : <span className="rz-pill" style={{ background: 'var(--amber)', color: '#fff' }}>Generate</span>}
-            </div>
-          </button>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+        {queue.map((t) => {
+          const ui = STATUS_UI[t.status];
+          const amount = t.status === 'bill_ready' ? t.billTotalMinor : t.runningMinor;
+          return (
+            <button key={t.table} onClick={() => setSel(t.table)} className="rz-card"
+              style={{ padding: '13px 14px', textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 6, borderLeft: `4px solid ${ui.color}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 700, fontSize: 17 }}>Table {t.table}</span>
+                <span style={{ fontWeight: 600 }}>{money(amount)}</span>
+              </div>
+              <span className="xs" style={{ color: ui.color, fontWeight: 600 }}>{ui.label}</span>
+              <span className="xs muted">{t.orderCount} order{t.orderCount === 1 ? '' : 's'} · {t.itemCount} item{t.itemCount === 1 ? '' : 's'}</span>
+            </button>
+          );
+        })}
       </div>
       <div className={'rz-toast' + (toast ? ' show' : '')}>{toast}</div>
     </div>
   );
 }
 
-function Settle({ item, onDone, flash, toast }: any) {
-  const [billId, setBillId] = useState<string | undefined>(item.billId);
-  const [lines, setLines] = useState<OpenBill['lines']>(item.lines || []);
-  const [totalMinor, setTotalMinor] = useState<number>(item.totalMinor || 0);
+function Settle({ tab, onDone, flash, toast }: any) {
+  const [billId, setBillId] = useState<string | null>(tab.billId || null);
+  const [lines, setLines] = useState<{ name: string; category: string; priceMinor: number }[]>([]);
+  const [totalMinor, setTotalMinor] = useState<number>(tab.billTotalMinor || 0);
   const [orders, setOrders] = useState<any[]>([]);
   const [coupon, setCoupon] = useState('');
   const [method, setMethod] = useState('upi');
   const [busy, setBusy] = useState(false);
   const [paid, setPaid] = useState(false);
-  const [loading, setLoading] = useState(!item.billId);
+  const [loading, setLoading] = useState(true);
 
-  // If no bill yet, preview the running (unbilled) orders for this table.
+  async function loadBill(id: string) {
+    const d = normalizeBillDetail(await billingApi.getBill(id));
+    setLines(d.lines); setTotalMinor(d.totalMinor);
+  }
+
   useEffect(() => {
-    if (billId) { setLoading(false); return; }
     (async () => {
-      try { setOrders(normalizeTableOrders(await billingApi.getTableOrders(item.table))); }
-      catch (e: any) { flash(e?.message || 'Could not load orders'); }
+      try {
+        if (billId) await loadBill(billId);
+        else setOrders(normalizeTableOrders(await billingApi.getTableOrders(tab.table)));
+      } catch (e: any) { flash(e?.message || 'Could not load the table'); }
       finally { setLoading(false); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,12 +127,11 @@ function Settle({ item, onDone, flash, toast }: any) {
   async function generate() {
     setBusy(true);
     try {
-      const r = await billingApi.openTableBill(item.table);
+      const r = await billingApi.openTableBill(tab.table);
       setBillId(r.bill.id);
-      setLines((r.bill.lines || []).map((l: any) => ({ name: l.name, category: l.category ?? 'Other', priceMinor: l.price?.minor ?? 0 })));
-      setTotalMinor(r.totals?.total?.minor ?? 0);
+      await loadBill(r.bill.id);
       flash('Bill generated');
-    } catch (e: any) { flash(e?.message || 'Could not generate the bill'); }
+    } catch (e: any) { flash(e?.message || 'No open orders to bill'); }
     finally { setBusy(false); }
   }
 
@@ -158,11 +153,7 @@ function Settle({ item, onDone, flash, toast }: any) {
     setBusy(true);
     try {
       const r = await billingApi.pay(billId, method, totalMinor);
-      if (r?.paid) {
-        // Clear any 'asked for bill' requests for this table.
-        for (const id of item.reqIds || []) { try { await billingApi.ackRequest(id); } catch { /* non-fatal */ } }
-        setPaid(true);
-      } else flash('Payment recorded (partial)');
+      if (r?.paid) setPaid(true); else flash('Payment recorded (partial)');
     } catch (e: any) { flash(e?.message || 'Could not take payment'); }
     finally { setBusy(false); }
   }
@@ -171,9 +162,9 @@ function Settle({ item, onDone, flash, toast }: any) {
     return (
       <div style={{ maxWidth: 460, margin: '0 auto', padding: '40px 18px', textAlign: 'center' }}>
         <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#E6EFE8', color: 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, margin: '0 auto 14px' }}>✓</div>
-        <h2 style={{ fontSize: 19, margin: 0 }}>Paid · Table {item.table}</h2>
+        <h2 style={{ fontSize: 19, margin: 0 }}>Paid · Table {tab.table}</h2>
         <div className="sm muted" style={{ marginTop: 7 }}>{money(totalMinor)} settled by {METHODS.find((m) => m.id === method)?.label}. The table is now free.</div>
-        <button className="rz-cta" style={{ marginTop: 22 }} onClick={onDone}>Back to queue</button>
+        <button className="rz-cta" style={{ marginTop: 22 }} onClick={onDone}>Back to board</button>
       </div>
     );
   }
@@ -181,8 +172,8 @@ function Settle({ item, onDone, flash, toast }: any) {
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', padding: '0 16px 60px' }}>
       <div style={{ padding: '16px 0 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button className="rz-ghost" style={{ width: 'auto', padding: '0 14px' }} onClick={onDone}>← Queue</button>
-        <div><div className="kicker">Settle</div><div style={{ fontSize: 20, fontWeight: 600 }}>Table {item.table}</div></div>
+        <button className="rz-ghost" style={{ width: 'auto', padding: '0 14px' }} onClick={onDone}>← Board</button>
+        <div><div className="kicker">Settle</div><div style={{ fontSize: 20, fontWeight: 600 }}>Table {tab.table}</div></div>
       </div>
 
       {loading && <div className="rz-empty">Loading…</div>}
