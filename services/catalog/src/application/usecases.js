@@ -47,6 +47,7 @@ export function makeCatalogUseCases({ items, outbox, clock }) {
       const item = createItem({
         name: input.name,
         categoryId: input.categoryId,
+        category: input.category,
         priceMinor: input.priceMinor,
         veg: input.veg,
         tags: input.tags,

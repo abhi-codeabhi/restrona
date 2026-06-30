@@ -32,19 +32,26 @@ export async function openTableBill({ useCases, tenant, table }) {
     return err(new NotFoundError(`No open orders to bill for table ${table}`));
   }
 
-  // Flatten every order's lines into per-unit bill lines, resolving dish names
-  // (orders may carry only a menuItemId) and prices from the order/catalog.
+  // Flatten every order's lines into per-unit bill lines, resolving each item's
+  // dish name AND menu category (Appetizers/Mains/Breads/Drinks) from the catalog
+  // — orders may carry only a menuItemId.
   const lines = [];
   for (const o of orders) {
     for (const ln of o.lines) {
       let name = ln.name;
-      if ((!name || name === ln.menuItemId) && ln.menuItemId && catalog?.getItem) {
+      let category = ln.category ?? null;
+      if (ln.menuItemId && catalog?.getItem && ((!name || name === ln.menuItemId) || !category)) {
         const ci = await catalog.getItem(tenant, ln.menuItemId);
-        if (ci.ok) name = ci.value.name;
+        if (ci.ok) {
+          if (!name || name === ln.menuItemId) name = ci.value.name;
+          if (!category) category = ci.value.category || 'Other';
+        }
       }
       const priceMinor = ln.unitPrice?.minor ?? ln.unitPriceMinor ?? 0;
       const qty = ln.qty || 1;
-      for (let i = 0; i < qty; i++) lines.push({ name: name || 'Item', priceMinor, shared: true });
+      for (let i = 0; i < qty; i++) {
+        lines.push({ name: name || 'Item', category: category || 'Other', priceMinor, shared: true });
+      }
     }
   }
 
@@ -62,5 +69,25 @@ export async function openTableBill({ useCases, tenant, table }) {
     await floor.setTableStatus(tenant, { n, status: 'billing' });
   }
 
-  return ok({ ...rb.value, orderCount: orders.length });
+  return ok({ ...rb.value, orderCount: orders.length, sections: groupByCategory(rb.value.bill) });
+}
+
+// Conventional menu running order; unknown categories fall to the end.
+const CATEGORY_ORDER = ['Appetizers', 'Mains', 'Breads', 'Sides', 'Drinks', 'Desserts', 'Other'];
+
+// Group bill lines into priced sections so the printed bill reads by course.
+function groupByCategory(bill) {
+  const byCat = new Map();
+  for (const l of bill.lines) {
+    const cat = l.category || 'Other';
+    if (!byCat.has(cat)) byCat.set(cat, { category: cat, count: 0, subtotalMinor: 0, items: [] });
+    const g = byCat.get(cat);
+    g.count += 1;
+    g.subtotalMinor += l.price?.minor ?? 0;
+    g.items.push({ name: l.name, priceMinor: l.price?.minor ?? 0 });
+  }
+  return [...byCat.values()].sort((a, b) => {
+    const ia = CATEGORY_ORDER.indexOf(a.category); const ib = CATEGORY_ORDER.indexOf(b.category);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
 }

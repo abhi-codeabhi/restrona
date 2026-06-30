@@ -13,6 +13,7 @@ export function openBill({ orderId, table, lines = [], id = newId('bill'), clock
   const billLines = lines.map((l) => ({
     id: newId('bl'),
     name: l.name,
+    category: l.category ?? 'Other', // course grouping on the printed bill
     price: new Money(l.priceMinor, INR),
     participantId: l.shared ? null : (l.participantId ?? null),
     shared: !!l.shared,

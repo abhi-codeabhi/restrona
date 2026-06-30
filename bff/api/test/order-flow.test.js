@@ -102,6 +102,12 @@ test('table accumulates multiple orders; one final bill is generated on request'
   assert.equal(billed.value.bill.lines.length, 4, '1 butter + 2 naan + 1 lassi = 4 units');
   // Dish names resolved (not raw menuItemIds).
   assert.ok(billed.value.bill.lines.some((l) => l.name === 'Butter Chicken'), 'names resolved');
+  // Each line carries its menu category, and the bill is grouped into sections.
+  assert.ok(billed.value.bill.lines.every((l) => l.category && l.category !== 'Other'), 'every line has a category');
+  const cats = billed.value.sections.map((s) => s.category);
+  assert.deepEqual(cats, ['Mains', 'Breads', 'Drinks'], 'sections grouped in menu order');
+  const mains = billed.value.sections.find((s) => s.category === 'Mains');
+  assert.equal(mains.subtotalMinor, 34000, 'Mains section subtotal = Butter Chicken');
   // Floor moved to billing.
   assert.equal((await uc.floor.getFloor(TENANT)).value.tables.find((t) => t.n === 8).status, 'billing');
 

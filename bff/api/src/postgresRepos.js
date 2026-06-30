@@ -105,6 +105,7 @@ class PgMenuItemRepository {
       id: r.id,
       name: r.name,
       categoryId: r.category_id ?? null,
+      category: r.category_name ?? null, // joined from menu_categories
       price: new Money(r.price_minor, 'INR'),
       veg: r.veg,
       tags: r.tags ?? {},
@@ -142,14 +143,24 @@ class PgMenuItemRepository {
 
   async findById(tenant, id) {
     return withTenantTx(this.#pool, tenant, async (client) => {
-      const { rows } = await client.query('SELECT * FROM menu_items WHERE id = $1', [id]);
+      const { rows } = await client.query(
+        `SELECT mi.*, mc.name AS category_name
+           FROM menu_items mi
+           LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+          WHERE mi.id = $1`, [id],
+      );
       return rows.length ? this.#toDomain(rows[0]) : null;
     });
   }
 
   async list(tenant) {
     return withTenantTx(this.#pool, tenant, async (client) => {
-      const { rows } = await client.query('SELECT * FROM menu_items ORDER BY sort_order, name');
+      const { rows } = await client.query(
+        `SELECT mi.*, mc.name AS category_name
+           FROM menu_items mi
+           LEFT JOIN menu_categories mc ON mc.id = mi.category_id
+          ORDER BY mi.sort_order, mi.name`,
+      );
       return rows.map((r) => this.#toDomain(r));
     });
   }

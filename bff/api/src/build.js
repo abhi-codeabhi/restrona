@@ -74,11 +74,11 @@ export function buildApiApp({ repos, logger } = {}) {
 export async function seedDemoData(useCases, tenantId = 'acme') {
   const tenant = { tenantId, tier: 'T1_POOLED', region: 'ap-mumbai-1' };
 
-  await useCases.catalog.addItem(tenant, { name: 'Paneer Tikka Bowl', priceMinor: 24000, veg: true, tags: { veg: 1, dairy: 1 }, prepMinutes: 12 });
-  await useCases.catalog.addItem(tenant, { name: 'Butter Chicken', priceMinor: 34000, veg: false, tags: { meat: 1, dairy: 1 }, prepMinutes: 18 });
-  await useCases.catalog.addItem(tenant, { name: 'Veg Biryani', priceMinor: 22000, veg: true, tags: { veg: 1 }, prepMinutes: 20 });
-  await useCases.catalog.addItem(tenant, { name: 'Garlic Naan', priceMinor: 6000, veg: true, tags: { veg: 1, gluten: 1, dairy: 1 }, prepMinutes: 6 });
-  await useCases.catalog.addItem(tenant, { name: 'Mango Lassi', priceMinor: 12000, veg: true, tags: { veg: 1, dairy: 1, sugar: 1 }, prepMinutes: 3 });
+  await useCases.catalog.addItem(tenant, { name: 'Paneer Tikka Bowl', category: 'Appetizers', priceMinor: 24000, veg: true, tags: { veg: 1, dairy: 1 }, prepMinutes: 12 });
+  await useCases.catalog.addItem(tenant, { name: 'Butter Chicken', category: 'Mains', priceMinor: 34000, veg: false, tags: { meat: 1, dairy: 1 }, prepMinutes: 18 });
+  await useCases.catalog.addItem(tenant, { name: 'Veg Biryani', category: 'Mains', priceMinor: 22000, veg: true, tags: { veg: 1 }, prepMinutes: 20 });
+  await useCases.catalog.addItem(tenant, { name: 'Garlic Naan', category: 'Breads', priceMinor: 6000, veg: true, tags: { veg: 1, gluten: 1, dairy: 1 }, prepMinutes: 6 });
+  await useCases.catalog.addItem(tenant, { name: 'Mango Lassi', category: 'Drinks', priceMinor: 12000, veg: true, tags: { veg: 1, dairy: 1, sugar: 1 }, prepMinutes: 3 });
 
   await useCases.promotions.createCoupon(tenant, { code: 'WELCOME20', type: 'percent', value: 20, minOrderMinor: 30000 });
 

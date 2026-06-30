@@ -6,7 +6,7 @@ export const DIETARY_FLAGS = [
   'dairy', 'nuts', 'fish', 'meat', 'egg', 'gluten', 'alcohol', 'sugar', 'spicy', 'raw',
 ];
 
-export function createItem({ name, categoryId, priceMinor, veg = false, tags = {}, prepMinutes = 0, id = newId('item') }) {
+export function createItem({ name, categoryId, category, priceMinor, veg = false, tags = {}, prepMinutes = 0, id = newId('item') }) {
   if (!name || !String(name).trim()) throw new DomainError('INVALID_ITEM', 'Item name is required');
   if (!Number.isInteger(priceMinor) || priceMinor <= 0) throw new DomainError('INVALID_ITEM', 'priceMinor must be a positive integer');
   // Normalise dietary flags into a clean 0/1 map.
@@ -16,6 +16,7 @@ export function createItem({ name, categoryId, priceMinor, veg = false, tags = {
     id,
     name: String(name).trim(),
     categoryId: categoryId ?? null,
+    category: category ?? null, // human-readable course: Appetizers | Mains | Breads | Drinks
     price: new Money(priceMinor, 'INR'),
     veg: !!veg,
     tags: normTags,
